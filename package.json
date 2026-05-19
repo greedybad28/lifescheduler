@@ -1,0 +1,18 @@
+{
+  "name": "life-system-calendar",
+  "version": "1.0.0",
+  "description": "Daily life system calendar with task logging",
+  "main": "script.js",
+  "dependencies": {
+    "firebase": "^10.7.0"
+  },
+  "devDependencies": {},
+  "scripts": {
+    "dev": "python -m http.server 8000",
+    "build": "echo 'No build needed - static site'",
+    "deploy": "vercel"
+  },
+  "keywords": ["calendar", "tasks", "schedule"],
+  "author": "",
+  "license": "MIT"
+}

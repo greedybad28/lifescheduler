@@ -141,12 +141,25 @@ const CATEGORY_COLORS = {
 
 const DAY_NAMES = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
 
+const MOTIVATIONAL_QUOTES = [
+    { text: "He who has a why to live for can bear almost any how.", author: "Friedrich Nietzsche" },
+    { text: "Protect your morning. Protect your wind-down. Consistency is the ultimate power multiplier.", author: "Habit Rituals" },
+    { text: "The secret of change is to focus all of your energy, not on fighting the old, but on building the new.", author: "Socrates" },
+    { text: "We are what we repeatedly do. Excellence, then, is not an act, but a habit.", author: "Aristotle" },
+    { text: "It is not that we have a short time to live, but that we waste a lot of it.", author: "Seneca" },
+    { text: "If you don't build your dream, someone else will hire you to help them build theirs.", author: "Dhirubhai Ambani" },
+    { text: "The code you write today shapes the reality of tomorrow. Keep creating.", author: "Developer Code" },
+    { text: "Without music, life would be a mistake. Go make your masterpiece today.", author: "Friedrich Nietzsche" },
+    { text: "Your energy is your currency. Spend it on things that elevate you, like focus, creation, and sweat.", author: "Life System" },
+    { text: "Discipline is choosing between what you want now and what you want most.", author: "Abraham Lincoln" }
+];
+
 /* ===================== STATE MANAGEMENT ===================== */
 let currentDate = new Date();
 let tasks = [];
 let scheduleStatus = {};
 let scheduleNotes = {};
-let currentView = 'week';
+let currentView = 'day'; // DEFAULT ACTIVE FIRST PAGE IS DAY VIEW
 let isDarkMode = localStorage.getItem('darkMode') === 'true';
 let editingTaskId = null;
 let editingScheduleBlock = null;
@@ -373,6 +386,34 @@ $('#themeToggle').addEventListener('click', () => {
     $('#themeToggle').textContent = isDarkMode ? '☀️' : '🌙';
 });
 
+/* ===================== DAILY MOTIVATION POPUP SYSTEM ===================== */
+function checkDailyQuote() {
+    const todayStr = new Date().toDateString();
+    const lastQuoteDate = localStorage.getItem('lifesystem_last_quote_date');
+    
+    if (lastQuoteDate !== todayStr) {
+        // Pick a random motivational quote
+        const randomIndex = Math.floor(Math.random() * MOTIVATIONAL_QUOTES.length);
+        const quote = MOTIVATIONAL_QUOTES[randomIndex];
+        
+        // Render inside quoteModal DOM elements
+        $('#quoteText').textContent = `"${quote.text}"`;
+        $('#quoteAuthor').textContent = `— ${quote.author}`;
+        $('#quoteModal').style.display = 'flex';
+        
+        // Save today's date so it registers only once per day
+        localStorage.setItem('lifesystem_last_quote_date', todayStr);
+    }
+}
+
+$('#closeQuoteBtn').addEventListener('click', () => {
+    $('#quoteModal').style.display = 'none';
+});
+
+$('#quoteAcknowledgeBtn').addEventListener('click', () => {
+    $('#quoteModal').style.display = 'none';
+});
+
 /* ===================== MODAL MANAGEMENT ===================== */
 const modal = $('#taskModal');
 const taskForm = $('#taskForm');
@@ -462,6 +503,11 @@ function updateDateDisplay() {
         return;
     }
 
+    if (currentView === 'day') {
+        $('#currentDate').textContent = formatDateDisplay(currentDate);
+        return;
+    }
+
     const weekStart = getWeekStart(currentDate);
     const weekEnd = new Date(weekStart);
     weekEnd.setDate(weekEnd.getDate() + 6);
@@ -471,6 +517,9 @@ function updateDateDisplay() {
 $('#prevWeek').addEventListener('click', () => {
     if (currentView === 'analytics') {
         adjustMonth(-1);
+    } else if (currentView === 'day') {
+        currentDate.setDate(currentDate.getDate() - 1);
+        render();
     } else {
         currentDate.setDate(currentDate.getDate() - 7);
         render();
@@ -480,6 +529,9 @@ $('#prevWeek').addEventListener('click', () => {
 $('#nextWeek').addEventListener('click', () => {
     if (currentView === 'analytics') {
         adjustMonth(1);
+    } else if (currentView === 'day') {
+        currentDate.setDate(currentDate.getDate() + 1);
+        render();
     } else {
         currentDate.setDate(currentDate.getDate() + 7);
         render();
@@ -726,18 +778,6 @@ function renderAnalyticsView() {
     
     const scheduleConsistencyRate = totalScheduleBlocks > 0 ? Math.round((completedScheduleBlocks / totalScheduleBlocks) * 100) : 0;
     
-    // Category counts for tasks
-    const categoryStats = {};
-    Object.keys(CATEGORY_COLORS).forEach(cat => {
-        categoryStats[cat] = 0;
-    });
-    
-    monthlyTasks.forEach(t => {
-        if (t.status === 'completed' && categoryStats[t.category] !== undefined) {
-            categoryStats[t.category]++;
-        }
-    });
-    
     // Generate actionable insights coach logs
     let insightHeader = "Keep pushing forward! 🚀";
     let insightText = "Add more custom tasks and track your schedule to generate detailed personal productivity insights.";
@@ -755,6 +795,17 @@ function renderAnalyticsView() {
         }
     }
 
+    const apiKey = localStorage.getItem('lifesystem_gemini_api_key');
+    const aiCoachButton = apiKey ? `
+        <button id="aiCoachBtn" onclick="consultRealAiCoach()" style="background: var(--primary); border: none; color: white; padding: 0.5rem 1rem; border-radius: 20px; font-size: 0.8rem; font-weight: 700; cursor: pointer; transition: all 0.3s; margin-left: auto;">
+            🧠 Consult Live AI Coach
+        </button>
+    ` : `
+        <button onclick="promptForApiKey()" style="background: transparent; border: 1px dashed var(--primary); color: var(--primary); padding: 0.5rem 1rem; border-radius: 20px; font-size: 0.8rem; font-weight: 700; cursor: pointer; transition: all 0.3s; margin-left: auto;">
+            🔑 Set API Key for Live AI Coach
+        </button>
+    `;
+
     const html = `
         <div class="analytics-header" style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 2rem; flex-wrap: wrap; gap: 1rem;">
             <div>
@@ -767,7 +818,7 @@ function renderAnalyticsView() {
             </div>
         </div>
         
-        <div class="analytics-grid" style="display: grid; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); gap: 1.5rem; margin-bottom: 2rem;">
+        <div class="analytics-grid" style="display: grid; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); gap: 1.5rem; margin-bottom: 1.5rem;">
             
             <!-- Custom Tasks Analytics Card -->
             <div class="analytics-card" style="background: var(--bg-secondary); border: 1px solid var(--border); padding: 1.5rem; border-radius: 16px; box-shadow: 0 10px 30px rgba(0,0,0,0.1);">
@@ -842,44 +893,20 @@ function renderAnalyticsView() {
             </div>
         </div>
         
-        <!-- Insights & Coach Logs Column -->
-        <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); gap: 1.5rem;">
-            
-            <!-- Category breakdown mini bars -->
-            <div class="analytics-card" style="background: var(--bg-secondary); border: 1px solid var(--border); padding: 1.5rem; border-radius: 16px;">
-                <h3 style="color: var(--primary); font-size: 1.2rem; font-weight: 700; margin-bottom: 1.2rem; border-bottom: 1px solid var(--border); padding-bottom: 0.5rem;">📊 Categories Completed</h3>
-                
-                <div style="display: flex; flex-direction: column; gap: 0.8rem;">
-                    ${Object.entries(categoryStats).map(([cat, count]) => {
-                        const maxCount = Math.max(...Object.values(categoryStats), 1);
-                        const percentage = Math.round((count / maxCount) * 100);
-                        const color = CATEGORY_COLORS[cat] || '#6b7280';
-                        return `
-                            <div>
-                                <div style="display: flex; justify-content: space-between; font-size: 0.8rem; margin-bottom: 0.2rem; text-transform: capitalize;">
-                                    <span style="font-weight: 600;">${cat}</span>
-                                    <span>${count} tasks</span>
-                                </div>
-                                <div style="height: 8px; background: var(--border); border-radius: 4px; overflow: hidden;">
-                                    <div style="width: ${percentage}%; height: 100%; background: ${color}; border-radius: 4px;"></div>
-                                </div>
-                            </div>
-                        `;
-                    }).join('')}
-                </div>
+        <!-- Actionable coach logs full-width -->
+        <div class="analytics-card" style="background: linear-gradient(135deg, rgba(102, 126, 234, 0.1) 0%, rgba(118, 75, 162, 0.1) 100%); border: 1px solid var(--primary); padding: 1.8rem; border-radius: 16px; position: relative; overflow: hidden; box-shadow: 0 10px 30px rgba(102, 126, 234, 0.15);">
+            <div style="position: absolute; right: -20px; bottom: -20px; font-size: 8rem; opacity: 0.05; pointer-events: none; transform: rotate(15deg);">💡</div>
+            <div style="display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 1rem; margin-bottom: 0.8rem;">
+                <div style="font-size: 1.8rem;">💡</div>
+                ${aiCoachButton}
             </div>
-            
-            <!-- AI Progress Coach Advice Box -->
-            <div class="analytics-card" style="background: linear-gradient(135deg, rgba(102, 126, 234, 0.1) 0%, rgba(118, 75, 162, 0.1) 100%); border: 1px solid var(--primary); padding: 1.5rem; border-radius: 16px; display: flex; flex-direction: column; justify-content: center; position: relative; overflow: hidden;">
-                <div style="position: absolute; right: -20px; bottom: -20px; font-size: 8rem; opacity: 0.05; pointer-events: none; transform: rotate(15deg);">💡</div>
-                <div style="font-size: 1.5rem; margin-bottom: 0.6rem;">💡</div>
-                <h3 style="color: var(--primary); font-size: 1.25rem; font-weight: 800; margin-bottom: 0.5rem;">${insightHeader}</h3>
-                <p style="color: var(--text); font-size: 0.95rem; line-height: 1.6; margin-bottom: 1rem;">
-                    "${insightText}"
-                </p>
-                <div style="font-size: 0.8rem; font-weight: 600; color: var(--text-light); text-transform: uppercase; letter-spacing: 1px;">
-                    ⚡ Personal Progress Coach
-                </div>
+            <h3 id="aiCoachHeader" style="color: var(--primary); font-size: 1.35rem; font-weight: 800; margin-bottom: 0.6rem;">${insightHeader}</h3>
+            <p id="aiCoachText" style="color: var(--text); font-size: 1rem; line-height: 1.7; margin-bottom: 1.2rem; max-width: 90%;">
+                "${insightText}"
+            </p>
+            <div style="font-size: 0.8rem; font-weight: 700; color: var(--text-light); text-transform: uppercase; letter-spacing: 1.5px; display: flex; align-items: center; gap: 0.5rem;">
+                <span style="display: inline-block; width: 6px; height: 6px; background: var(--success); border-radius: 50%;"></span>
+                ⚡ Personal Progress Coach Active
             </div>
         </div>
     `;
@@ -891,6 +918,110 @@ window.adjustMonth = function(direction) {
     currentDate.setMonth(currentDate.getMonth() + direction);
     updateDateDisplay();
     renderAnalyticsView();
+};
+
+window.promptForApiKey = function() {
+    const key = prompt('Enter your free Gemini API Key (get it from aistudio.google.com):');
+    if (key) {
+        localStorage.setItem('lifesystem_gemini_api_key', key.trim());
+        renderAnalyticsView();
+    }
+};
+
+window.consultRealAiCoach = async function() {
+    const apiKey = localStorage.getItem('lifesystem_gemini_api_key');
+    if (!apiKey) {
+        promptForApiKey();
+        return;
+    }
+    
+    const activeMonth = currentDate.getMonth();
+    const activeYear = currentDate.getFullYear();
+    const monthName = currentDate.toLocaleString('en-US', { month: 'long' });
+    
+    // Aggregate real stats
+    const monthlyTasks = tasks.filter(task => {
+        const taskDate = new Date(task.date);
+        return taskDate.getMonth() === activeMonth && taskDate.getFullYear() === activeYear;
+    });
+    
+    const totalTasks = monthlyTasks.length;
+    const completedTasks = monthlyTasks.filter(t => t.status === 'completed').length;
+    const failedTasks = monthlyTasks.filter(t => t.status === 'failed').length;
+    const taskCompletionRate = totalTasks > 0 ? Math.round((completedTasks / totalTasks) * 100) : 0;
+    
+    let totalScheduleBlocks = 0;
+    let completedScheduleBlocks = 0;
+    const daysInMonth = new Date(activeYear, activeMonth + 1, 0).getDate();
+    
+    for (let day = 1; day <= daysInMonth; day++) {
+        const date = new Date(activeYear, activeMonth, day);
+        const dayOfWeek = date.getDay();
+        const dateStr = formatDate(date);
+        const dayData = weeklySchedule[dayOfWeek] || { blocks: [] };
+        const blocks = dayData.blocks || [];
+        totalScheduleBlocks += blocks.length;
+        blocks.forEach((_, idx) => {
+            if (isScheduleItemCompleted(dateStr, idx)) completedScheduleBlocks++;
+        });
+    }
+    
+    const scheduleConsistencyRate = totalScheduleBlocks > 0 ? Math.round((completedScheduleBlocks / totalScheduleBlocks) * 100) : 0;
+    
+    const coachTextEl = $('#aiCoachText');
+    const coachHeaderEl = $('#aiCoachHeader');
+    const coachBtn = $('#aiCoachBtn');
+    
+    coachTextEl.textContent = 'Analyzing your calendar patterns and asking Gemini for strategic roasts/boosts...';
+    coachBtn.disabled = true;
+    coachBtn.textContent = '🧠 Consulting...';
+    
+    try {
+        const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${apiKey}`;
+        
+        const response = await fetch(url, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({
+                contents: [{
+                    parts: [{
+                        text: `Stats for ${monthName} ${activeYear}:
+- Custom tasks completed: ${completedTasks} out of ${totalTasks} (${taskCompletionRate}% completion rate)
+- Custom tasks marked "Not Done" (failed): ${failedTasks}
+- Routine blocks followed: ${completedScheduleBlocks} out of ${totalScheduleBlocks} (${scheduleConsistencyRate}% schedule consistency)
+
+Please write a highly engaging, custom-tailored progress evaluation (approx 3-5 sentences). Give a healthy blend of direct, witty habit coaching (a slight roast if consistency is low, or high praise/boost if consistency is high), and 1 actionable productivity tip for next week based on these stats.`
+                    }]
+                }],
+                generationConfig: {
+                    systemInstruction: {
+                        parts: [{
+                            text: "You are the ultimate personal productivity AI Coach for the Life System application. You speak with wit, clarity, and intense motivation, like a high-performing mentor or a witty elite coach. Keep your response concise (maximum 100 words) and directly actionable."
+                        }]
+                    }
+                }
+            })
+        });
+        
+        if (!response.ok) throw new Error('Failed to fetch from Gemini');
+        const data = await response.json();
+        const text = data.candidates?.[0]?.content?.parts?.[0]?.text;
+        
+        if (text) {
+            coachHeaderEl.textContent = taskCompletionRate >= 70 ? 'AI Coach Boost! 🔥' : 'AI Coach Realignment! ⚡';
+            coachTextEl.textContent = `"${text.trim()}"`;
+        } else {
+            throw new Error('Empty response');
+        }
+    } catch (e) {
+        console.error(e);
+        coachTextEl.textContent = 'Failed to load live AI roasts. Make sure your API key is correct!';
+    } finally {
+        coachBtn.disabled = false;
+        coachBtn.textContent = '🧠 Consult Live AI Coach';
+    }
 };
 
 function render() {
@@ -982,6 +1113,7 @@ function initAuth() {
             updateSyncStatus('Synced', true);
             await loadTasks();
             render();
+            checkDailyQuote(); // Trigger daily motivational quote popup once logged in!
         } else {
             // User is signed out
             currentUserId = 'anonymous_user';
@@ -1113,7 +1245,7 @@ function getAuthErrorMessage(error) {
     }
 }
 
-/* ===================== ONBOARDING & TEMPLATE EDITOR SYSTEM ===================== */
+/* ===================== ONBOARDING & AI ROUTINE ARCHITECT SYSTEM ===================== */
 function showOnboardingModal() {
     $('#onboardingModal').style.display = 'flex';
 }
@@ -1139,6 +1271,131 @@ $('#onboardingBlankBtn').addEventListener('click', async () => {
     $('#onboardingModal').style.display = 'none';
     render();
 });
+
+// Trigger AI Routine prompt modal step
+$('#onboardingAiBtn').addEventListener('click', () => {
+    $('#onboardingModal').style.display = 'none';
+    
+    // Pre-fill Gemini API key input if already present in localStorage
+    const savedKey = localStorage.getItem('lifesystem_gemini_api_key');
+    if (savedKey) {
+        $('#aiApiKeyInput').value = savedKey;
+    }
+    
+    $('#aiOnboardingModal').style.display = 'flex';
+});
+
+$('#aiOnboardingBackBtn').addEventListener('click', () => {
+    $('#aiOnboardingModal').style.display = 'none';
+    $('#onboardingModal').style.display = 'flex';
+});
+
+$('#aiOnboardingGenerateBtn').addEventListener('click', generateAiRoutine);
+
+async function generateAiRoutine() {
+    const promptText = $('#aiOnboardingInput').value.trim();
+    const apiKey = $('#aiApiKeyInput').value.trim();
+    const errorEl = $('#aiOnboardingError');
+    const loaderEl = $('#aiOnboardingLoader');
+    const generateBtn = $('#aiOnboardingGenerateBtn');
+    
+    if (!promptText) {
+        errorEl.textContent = 'Please describe your perfect week first!';
+        errorEl.style.display = 'block';
+        return;
+    }
+    
+    if (!apiKey) {
+        errorEl.textContent = 'Please enter your Gemini API Key! It is completely free to get.';
+        errorEl.style.display = 'block';
+        return;
+    }
+    
+    // Save API key for future AI Coach roasts too!
+    localStorage.setItem('lifesystem_gemini_api_key', apiKey);
+    
+    errorEl.style.display = 'none';
+    loaderEl.style.display = 'block';
+    generateBtn.disabled = true;
+    
+    try {
+        const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${apiKey}`;
+        
+        const response = await fetch(url, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({
+                contents: [{
+                    parts: [{
+                        text: `User request: ${promptText}\n\nPlease generate their 7-day schedule template in JSON format.`
+                    }]
+                }],
+                generationConfig: {
+                    responseMimeType: "application/json",
+                    systemInstruction: {
+                        parts: [{
+                            text: `You are the AI Routine Architect for a productivity web application called Life System.
+Your job is to generate a custom 7-day schedule template based on the user's goals, profession, and routine preferences.
+Return a single JSON object mapping day indexes ("0" for Sunday, "1" for Monday, ..., "6" for Saturday) to their routine blocks.
+
+The JSON MUST match this exact structure:
+{
+  "0": {
+    "blocks": [
+      { "time": "6:00 AM - 8:00 AM", "title": "Sleep In", "description": "No alarm, sleep at your pace" },
+      { "time": "8:00 AM - 10:00 AM", "title": "Morning at your pace", "description": "Relax, no rush" }
+    ],
+    "rest": true
+  },
+  "1": {
+    "blocks": [
+      { "time": "3:30 AM", "title": "Wake-up Ritual", "description": "Water, wash face, light food" },
+      { "time": "9:00 AM - 11:00 AM", "title": "Internship", "description": "Focus work" }
+    ]
+  }
+}
+
+Generate between 3 to 8 blocks per day depending on the day and user description. Align times elegantly. Sunday ("0") should generally be a Rest/Recovery day unless they state otherwise.
+Ensure all times are formatted clearly as string values.`
+                        }]
+                    }
+                }
+            })
+        });
+        
+        if (!response.ok) {
+            const errData = await response.json();
+            throw new Error(errData.error?.message || 'API request failed');
+        }
+        
+        const data = await response.json();
+        const textResponse = data.candidates?.[0]?.content?.parts?.[0]?.text;
+        
+        if (!textResponse) {
+            throw new Error('No schedule blocks generated by Gemini.');
+        }
+        
+        const customTemplate = JSON.parse(textResponse);
+        
+        // Validate and apply
+        weeklySchedule = customTemplate;
+        await saveWeeklySchedule();
+        
+        // Close modal and refresh
+        $('#aiOnboardingModal').style.display = 'none';
+        render();
+        
+    } catch (error) {
+        console.error('AI Onboarding Error:', error);
+        errorEl.textContent = `Error architecting: ${error.message}`;
+        errorEl.style.display = 'block';
+    } finally {
+        loaderEl.style.display = 'none';
+        generateBtn.disabled = false;
+    }
+}
 
 // Template Editor Modal Logic
 function openTemplateEditor() {
@@ -1270,6 +1527,13 @@ $('#templateSaveAllBtn').addEventListener('click', async () => {
     closeTemplateEditor();
     render();
 });
+
+/* ===================== WINDOW GLOBAL SCOPE BINDINGS ===================== */
+window.toggleScheduleItem = toggleScheduleItem;
+window.openDayView = openDayView;
+window.switchToWeekView = switchToWeekView;
+window.deleteTaskAndRender = deleteTaskAndRender;
+window.editTask = editTask;
 
 /* ===================== INITIALIZATION ===================== */
 document.addEventListener('DOMContentLoaded', async () => {

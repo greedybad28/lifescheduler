@@ -393,7 +393,7 @@ function renderWeekView() {
                                 const isCompleted = isScheduleItemCompleted(dateStr, idx);
                                 return `
                                     <div class="schedule-check-item ${isCompleted ? 'completed' : ''}" onclick="event.stopPropagation(); toggleScheduleItem('${dateStr}', ${idx})">
-                                        <input type="checkbox" ${isCompleted ? 'checked' : ''} onclick="event.stopPropagation()">
+                                        <input type="checkbox" ${isCompleted ? 'checked' : ''}>
                                         <span class="check-time">${block.time.split(' - ')[0]}</span>
                                         <span class="check-title">${block.title}</span>
                                     </div>

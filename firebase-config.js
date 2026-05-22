@@ -16,4 +16,5 @@ const firebaseConfig = {
 const firebaseConfig = null; // Set to null to use localStorage
 */
 
-export default firebaseConfig;
+// Export omitted for compatibility with plain browser script inclusion
+// export default firebaseConfig;

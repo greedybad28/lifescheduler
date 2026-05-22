@@ -253,9 +253,21 @@ function updateTask(id, updates) {
 }
 
 // Delete task
-function deleteTask(id) {
+async function deleteTask(id) {
     tasks = tasks.filter(t => t.id !== id);
-    saveTasks();
+    try {
+        if (useFirebase && db) {
+            updateSyncStatus('Saving...', false);
+            localStorage.setItem(STORAGE_KEY, JSON.stringify(tasks));
+            await db.collection('users').doc(currentUserId).collection('tasks').doc(id).delete();
+            updateSyncStatus('Synced', true);
+        } else {
+            localStorage.setItem(STORAGE_KEY, JSON.stringify(tasks));
+        }
+    } catch (error) {
+        console.error('Error deleting task from Firestore:', error);
+        updateSyncStatus('Save failed', false);
+    }
     render();
 }
 
@@ -483,7 +495,7 @@ function renderWeekView() {
                                 const isCompleted = isScheduleItemCompleted(dateStr, idx);
                                 return `
                                     <div class="schedule-check-item ${isCompleted ? 'completed' : ''}" onclick="event.stopPropagation(); toggleScheduleItem('${dateStr}', ${idx})">
-                                        <input type="checkbox" ${isCompleted ? 'checked' : ''} onclick="event.stopPropagation()">
+                                        <input type="checkbox" ${isCompleted ? 'checked' : ''}>
                                         <span class="check-time">${block.time.split(' - ')[0]}</span>
                                         <span class="check-title">${block.title}</span>
                                     </div>

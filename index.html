@@ -48,6 +48,7 @@
         <div class="view-toggle" style="display: flex; align-items: center; justify-content: flex-start; gap: 0.5rem; width: 100%;">
             <button class="view-btn active" data-view="week">Week</button>
             <button class="view-btn" data-view="day">Day</button>
+            <button class="view-btn" data-view="analytics">📈 Analytics</button>
             <button class="view-btn" id="editTemplateBtn" style="border: 1px solid var(--accent); color: var(--accent); margin-left: auto; background: transparent; font-size: 0.85rem; padding: 0.5rem 0.8rem; border-radius: 20px; font-weight: 600; cursor: pointer; transition: all 0.3s;">⚙️ Edit Template</button>
         </div>
 
@@ -62,6 +63,11 @@
             <!-- Day View -->
             <div id="dayView" class="view">
                 <div class="day-detail" id="dayDetail"></div>
+            </div>
+
+            <!-- Analytics View -->
+            <div id="analyticsView" class="view">
+                <div class="analytics-container" id="analyticsContent"></div>
             </div>
         </main>
 
@@ -105,6 +111,7 @@
                             <option value="pending">Pending</option>
                             <option value="in-progress">In Progress</option>
                             <option value="completed">Completed</option>
+                            <option value="failed">Not Done</option>
                         </select>
                     </div>
                     <div class="form-group">

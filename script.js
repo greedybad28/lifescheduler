@@ -455,6 +455,13 @@ $('#deleteBtn').addEventListener('click', () => {
 
 /* ===================== DATE NAVIGATION ===================== */
 function updateDateDisplay() {
+    if (currentView === 'analytics') {
+        const activeYear = currentDate.getFullYear();
+        const monthName = currentDate.toLocaleString('en-US', { month: 'long' });
+        $('#currentDate').textContent = `📈 ${monthName} ${activeYear}`;
+        return;
+    }
+
     const weekStart = getWeekStart(currentDate);
     const weekEnd = new Date(weekStart);
     weekEnd.setDate(weekEnd.getDate() + 6);
@@ -462,13 +469,21 @@ function updateDateDisplay() {
 }
 
 $('#prevWeek').addEventListener('click', () => {
-    currentDate.setDate(currentDate.getDate() - 7);
-    render();
+    if (currentView === 'analytics') {
+        adjustMonth(-1);
+    } else {
+        currentDate.setDate(currentDate.getDate() - 7);
+        render();
+    }
 });
 
 $('#nextWeek').addEventListener('click', () => {
-    currentDate.setDate(currentDate.getDate() + 7);
-    render();
+    if (currentView === 'analytics') {
+        adjustMonth(1);
+    } else {
+        currentDate.setDate(currentDate.getDate() + 7);
+        render();
+    }
 });
 
 $('#todayBtn').addEventListener('click', () => {
@@ -486,6 +501,15 @@ $$('.view-btn').forEach(btn => {
         render();
     });
 });
+
+/* ===================== TASK QUICK TOGGLES ===================== */
+window.toggleTaskStatus = function(id, statusToSet) {
+    const task = tasks.find(t => t.id === id);
+    if (task) {
+        const newStatus = task.status === statusToSet ? 'pending' : statusToSet;
+        updateTask(id, { status: newStatus });
+    }
+};
 
 /* ===================== RENDERING ===================== */
 function renderWeekView() {
@@ -544,9 +568,11 @@ function renderWeekView() {
                                 <div class="task-content">
                                     <div class="task-time">${task.time}</div>
                                     <div class="task-title">${task.title}</div>
-                                    <span class="task-category">${task.category}</span>
+                                    <span class="task-category" style="background-color: ${CATEGORY_COLORS[task.category] || 'var(--primary)'};">${task.category}</span>
                                 </div>
-                                <div class="task-actions">
+                                <div class="task-actions" style="align-items: center; gap: 0.25rem;">
+                                    <button class="task-btn check" style="background: ${task.status === 'completed' ? 'var(--success)' : 'transparent'}; color: ${task.status === 'completed' ? 'white' : 'inherit'}; border-color: ${task.status === 'completed' ? 'var(--success)' : 'var(--border)'};" onclick="toggleTaskStatus('${task.id}', 'completed')">✔️</button>
+                                    <button class="task-btn cross" style="background: ${task.status === 'failed' ? 'var(--danger)' : 'transparent'}; color: ${task.status === 'failed' ? 'white' : 'inherit'}; border-color: ${task.status === 'failed' ? 'var(--danger)' : 'var(--border)'};" onclick="toggleTaskStatus('${task.id}', 'failed')">❌</button>
                                     <button class="task-btn edit" onclick="editTask('${task.id}')">✏️</button>
                                     <button class="task-btn delete" onclick="deleteTaskAndRender('${task.id}')">🗑️</button>
                                 </div>
@@ -605,10 +631,12 @@ function renderDayView() {
                                     <div class="task-item ${task.status}">
                                         <div class="task-content">
                                             <div class="task-title">${task.title}</div>
-                                            <span class="task-category">${task.category}</span>
+                                            <span class="task-category" style="background-color: ${CATEGORY_COLORS[task.category] || 'var(--primary)'};">${task.category}</span>
                                             ${task.notes ? `<p style="font-size: 0.85rem; color: var(--text-light); margin-top: 0.3rem;">${task.notes}</p>` : ''}
                                         </div>
-                                        <div class="task-actions">
+                                        <div class="task-actions" style="align-items: center; gap: 0.25rem;">
+                                            <button class="task-btn check" style="background: ${task.status === 'completed' ? 'var(--success)' : 'transparent'}; color: ${task.status === 'completed' ? 'white' : 'inherit'}; border-color: ${task.status === 'completed' ? 'var(--success)' : 'var(--border)'};" onclick="toggleTaskStatus('${task.id}', 'completed')">✔️</button>
+                                            <button class="task-btn cross" style="background: ${task.status === 'failed' ? 'var(--danger)' : 'transparent'}; color: ${task.status === 'failed' ? 'white' : 'inherit'}; border-color: ${task.status === 'failed' ? 'var(--danger)' : 'var(--border)'};" onclick="toggleTaskStatus('${task.id}', 'failed')">❌</button>
                                             <button class="task-btn edit" onclick="editTask('${task.id}')">✏️</button>
                                             <button class="task-btn delete" onclick="deleteTaskAndRender('${task.id}')">🗑️</button>
                                         </div>
@@ -630,10 +658,12 @@ function renderDayView() {
                                 <div style="flex: 1;">
                                     <div class="schedule-time">⏰ ${task.time}</div>
                                     <div class="schedule-title">${task.title}</div>
-                                    <span class="task-category">${task.category}</span>
+                                    <span class="task-category" style="background-color: ${CATEGORY_COLORS[task.category] || 'var(--primary)'};">${task.category}</span>
                                     ${task.notes ? `<p style="font-size: 0.85rem; color: var(--text-light); margin-top: 0.5rem;">${task.notes}</p>` : ''}
                                 </div>
-                                <div class="task-actions">
+                                <div class="task-actions" style="align-items: center; gap: 0.25rem;">
+                                    <button class="task-btn check" style="background: ${task.status === 'completed' ? 'var(--success)' : 'transparent'}; color: ${task.status === 'completed' ? 'white' : 'inherit'}; border-color: ${task.status === 'completed' ? 'var(--success)' : 'var(--border)'};" onclick="toggleTaskStatus('${task.id}', 'completed')">✔️</button>
+                                    <button class="task-btn cross" style="background: ${task.status === 'failed' ? 'var(--danger)' : 'transparent'}; color: ${task.status === 'failed' ? 'white' : 'inherit'}; border-color: ${task.status === 'failed' ? 'var(--danger)' : 'var(--border)'};" onclick="toggleTaskStatus('${task.id}', 'failed')">❌</button>
                                     <button class="task-btn edit" onclick="editTask('${task.id}')">✏️</button>
                                     <button class="task-btn delete" onclick="deleteTaskAndRender('${task.id}')">🗑️</button>
                                 </div>
@@ -648,6 +678,221 @@ function renderDayView() {
     $('#dayDetail').innerHTML = html;
 }
 
+/* ===================== ANALYTICS VIEW RENDERING ===================== */
+function renderAnalyticsView() {
+    const activeMonth = currentDate.getMonth(); // 0-11
+    const activeYear = currentDate.getFullYear();
+    
+    // Get month name
+    const monthName = currentDate.toLocaleString('en-US', { month: 'long' });
+    
+    // Filter tasks for the selected month
+    const monthlyTasks = tasks.filter(task => {
+        const taskDate = new Date(task.date);
+        return taskDate.getMonth() === activeMonth && taskDate.getFullYear() === activeYear;
+    });
+    
+    // Calculate custom task stats
+    const totalTasks = monthlyTasks.length;
+    const completedTasks = monthlyTasks.filter(t => t.status === 'completed').length;
+    const failedTasks = monthlyTasks.filter(t => t.status === 'failed').length;
+    const pendingTasks = monthlyTasks.filter(t => t.status === 'pending' || t.status === 'in-progress').length;
+    
+    const taskCompletionRate = totalTasks > 0 ? Math.round((completedTasks / totalTasks) * 100) : 0;
+    const taskFailureRate = totalTasks > 0 ? Math.round((failedTasks / totalTasks) * 100) : 0;
+    
+    // Calculate schedule template block stats for this month
+    let totalScheduleBlocks = 0;
+    let completedScheduleBlocks = 0;
+    
+    // Days in current month
+    const daysInMonth = new Date(activeYear, activeMonth + 1, 0).getDate();
+    
+    for (let day = 1; day <= daysInMonth; day++) {
+        const date = new Date(activeYear, activeMonth, day);
+        const dayOfWeek = date.getDay();
+        const dateStr = formatDate(date);
+        
+        const dayData = weeklySchedule[dayOfWeek] || { blocks: [] };
+        const blocks = dayData.blocks || [];
+        
+        totalScheduleBlocks += blocks.length;
+        blocks.forEach((_, idx) => {
+            if (isScheduleItemCompleted(dateStr, idx)) {
+                completedScheduleBlocks++;
+            }
+        });
+    }
+    
+    const scheduleConsistencyRate = totalScheduleBlocks > 0 ? Math.round((completedScheduleBlocks / totalScheduleBlocks) * 100) : 0;
+    
+    // Category counts for tasks
+    const categoryStats = {};
+    Object.keys(CATEGORY_COLORS).forEach(cat => {
+        categoryStats[cat] = 0;
+    });
+    
+    monthlyTasks.forEach(t => {
+        if (t.status === 'completed' && categoryStats[t.category] !== undefined) {
+            categoryStats[t.category]++;
+        }
+    });
+    
+    // Generate actionable insights coach logs
+    let insightHeader = "Keep pushing forward! 🚀";
+    let insightText = "Add more custom tasks and track your schedule to generate detailed personal productivity insights.";
+    
+    if (totalTasks > 0 || totalScheduleBlocks > 0) {
+        if (taskCompletionRate >= 75 && scheduleConsistencyRate >= 70) {
+            insightHeader = "Outstanding Performance! 🏆";
+            insightText = `You are absolutely crushing it! Your monthly completion rate is ${taskCompletionRate}% and you followed ${scheduleConsistencyRate}% of your routine blocks. You are protecting your habits aggressively!`;
+        } else if (taskCompletionRate >= 50) {
+            insightHeader = "Strong Habits Building! 🌱";
+            insightText = `Good consistency! You completed ${completedTasks} custom tasks this month. Tip: Look at the tasks marked 'Not Done' (${failedTasks}) to see if they can be scheduled for a different time range.`;
+        } else {
+            insightHeader = "Focus & Realignment Time ⚓";
+            insightText = `Every step is progress. You completed ${completedTasks} tasks and logged ${completedScheduleBlocks} schedule blocks this month. Let's aim to simplify your template block titles to build momentum!`;
+        }
+    }
+
+    const html = `
+        <div class="analytics-header" style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 2rem; flex-wrap: wrap; gap: 1rem;">
+            <div>
+                <h2 style="font-size: 1.8rem; font-weight: 800; background: linear-gradient(135deg, var(--primary) 0%, var(--accent) 100%); -webkit-background-clip: text; -webkit-text-fill-color: transparent;">📈 Performance Analytics</h2>
+                <p style="color: var(--text-light); margin-top: 0.3rem;">Monthly progress coach & calendar insights for <strong>${monthName} ${activeYear}</strong></p>
+            </div>
+            <div style="display: flex; gap: 0.5rem;">
+                <button class="nav-btn" onclick="adjustMonth(-1)">◀ Prev Month</button>
+                <button class="nav-btn" onclick="adjustMonth(1)">Next Month ▶</button>
+            </div>
+        </div>
+        
+        <div class="analytics-grid" style="display: grid; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); gap: 1.5rem; margin-bottom: 2rem;">
+            
+            <!-- Custom Tasks Analytics Card -->
+            <div class="analytics-card" style="background: var(--bg-secondary); border: 1px solid var(--border); padding: 1.5rem; border-radius: 16px; box-shadow: 0 10px 30px rgba(0,0,0,0.1);">
+                <h3 style="color: var(--primary); font-size: 1.2rem; font-weight: 700; margin-bottom: 1.2rem; border-bottom: 1px solid var(--border); padding-bottom: 0.5rem; display: flex; align-items: center; gap: 0.5rem;">🎯 Task Progress</h3>
+                
+                <div style="display: flex; align-items: center; gap: 1.5rem; margin-bottom: 1.5rem;">
+                    <!-- Circular visual progress indicator -->
+                    <div style="position: relative; width: 90px; height: 90px; border-radius: 50%; background: conic-gradient(var(--success) ${taskCompletionRate * 3.6}deg, var(--border) 0deg); display: flex; align-items: center; justify-content: center;">
+                        <div style="position: absolute; width: 74px; height: 74px; border-radius: 50%; background: var(--bg); display: flex; align-items: center; justify-content: center; font-weight: 800; font-size: 1.25rem; color: var(--text);">
+                            ${taskCompletionRate}%
+                        </div>
+                    </div>
+                    <div style="flex: 1;">
+                        <div style="font-size: 0.85rem; font-weight: 600; color: var(--text-light);">COMPLETION RATE</div>
+                        <div style="font-size: 1.8rem; font-weight: 800; color: var(--success); margin-top: 0.1rem;">${completedTasks} <span style="font-size: 0.9rem; font-weight: 500; color: var(--text-light);">/ ${totalTasks} Done</span></div>
+                    </div>
+                </div>
+                
+                <div style="display: flex; flex-direction: column; gap: 0.8rem;">
+                    <div>
+                        <div style="display: flex; justify-content: space-between; font-size: 0.85rem; margin-bottom: 0.3rem;">
+                            <span>Completed Tasks</span>
+                            <span style="font-weight: 700; color: var(--success);">${completedTasks}</span>
+                        </div>
+                        <div style="height: 6px; background: var(--border); border-radius: 3px; overflow: hidden;">
+                            <div style="width: ${taskCompletionRate}%; height: 100%; background: var(--success);"></div>
+                        </div>
+                    </div>
+                    
+                    <div>
+                        <div style="display: flex; justify-content: space-between; font-size: 0.85rem; margin-bottom: 0.3rem;">
+                            <span>Not Done (Failed)</span>
+                            <span style="font-weight: 700; color: var(--danger);">${failedTasks}</span>
+                        </div>
+                        <div style="height: 6px; background: var(--border); border-radius: 3px; overflow: hidden;">
+                            <div style="width: ${taskFailureRate}%; height: 100%; background: var(--danger);"></div>
+                        </div>
+                    </div>
+                    
+                    <div style="display: flex; justify-content: space-between; font-size: 0.85rem; border-top: 1px solid var(--border); padding-top: 0.8rem; margin-top: 0.2rem;">
+                        <span>Pending / In Progress</span>
+                        <span style="font-weight: 700; color: var(--warning);">${pendingTasks}</span>
+                    </div>
+                </div>
+            </div>
+            
+            <!-- Schedule Consistency Analytics Card -->
+            <div class="analytics-card" style="background: var(--bg-secondary); border: 1px solid var(--border); padding: 1.5rem; border-radius: 16px; box-shadow: 0 10px 30px rgba(0,0,0,0.1);">
+                <h3 style="color: var(--primary); font-size: 1.2rem; font-weight: 700; margin-bottom: 1.2rem; border-bottom: 1px solid var(--border); padding-bottom: 0.5rem; display: flex; align-items: center; gap: 0.5rem;">📅 Schedule Consistency</h3>
+                
+                <div style="display: flex; align-items: center; gap: 1.5rem; margin-bottom: 1.5rem;">
+                    <!-- Circular visual progress indicator -->
+                    <div style="position: relative; width: 90px; height: 90px; border-radius: 50%; background: conic-gradient(var(--accent) ${scheduleConsistencyRate * 3.6}deg, var(--border) 0deg); display: flex; align-items: center; justify-content: center;">
+                        <div style="position: absolute; width: 74px; height: 74px; border-radius: 50%; background: var(--bg); display: flex; align-items: center; justify-content: center; font-weight: 800; font-size: 1.25rem; color: var(--text);">
+                            ${scheduleConsistencyRate}%
+                        </div>
+                    </div>
+                    <div style="flex: 1;">
+                        <div style="font-size: 0.85rem; font-weight: 600; color: var(--text-light);">ROUTINE INTEGRITY</div>
+                        <div style="font-size: 1.8rem; font-weight: 800; color: var(--accent); margin-top: 0.1rem;">${completedScheduleBlocks} <span style="font-size: 0.9rem; font-weight: 500; color: var(--text-light);">/ ${totalScheduleBlocks} blocks</span></div>
+                    </div>
+                </div>
+                
+                <div style="display: flex; flex-direction: column; gap: 0.8rem;">
+                    <p style="font-size: 0.85rem; color: var(--text-light); line-height: 1.5;">
+                        This tracking score measures how consistently you follow and mark completion of your pre-defined daily routine block schedules configured in your template manager.
+                    </p>
+                    <div style="background: rgba(102, 126, 234, 0.08); padding: 0.8rem; border-radius: 8px; border-left: 3px solid var(--primary); font-size: 0.85rem; margin-top: 0.2rem;">
+                        <strong>Daily Habit Tracker:</strong> Protect your wake-up time blocks aggressively to build routine strength!
+                    </div>
+                </div>
+            </div>
+        </div>
+        
+        <!-- Insights & Coach Logs Column -->
+        <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); gap: 1.5rem;">
+            
+            <!-- Category breakdown mini bars -->
+            <div class="analytics-card" style="background: var(--bg-secondary); border: 1px solid var(--border); padding: 1.5rem; border-radius: 16px;">
+                <h3 style="color: var(--primary); font-size: 1.2rem; font-weight: 700; margin-bottom: 1.2rem; border-bottom: 1px solid var(--border); padding-bottom: 0.5rem;">📊 Categories Completed</h3>
+                
+                <div style="display: flex; flex-direction: column; gap: 0.8rem;">
+                    ${Object.entries(categoryStats).map(([cat, count]) => {
+                        const maxCount = Math.max(...Object.values(categoryStats), 1);
+                        const percentage = Math.round((count / maxCount) * 100);
+                        const color = CATEGORY_COLORS[cat] || '#6b7280';
+                        return `
+                            <div>
+                                <div style="display: flex; justify-content: space-between; font-size: 0.8rem; margin-bottom: 0.2rem; text-transform: capitalize;">
+                                    <span style="font-weight: 600;">${cat}</span>
+                                    <span>${count} tasks</span>
+                                </div>
+                                <div style="height: 8px; background: var(--border); border-radius: 4px; overflow: hidden;">
+                                    <div style="width: ${percentage}%; height: 100%; background: ${color}; border-radius: 4px;"></div>
+                                </div>
+                            </div>
+                        `;
+                    }).join('')}
+                </div>
+            </div>
+            
+            <!-- AI Progress Coach Advice Box -->
+            <div class="analytics-card" style="background: linear-gradient(135deg, rgba(102, 126, 234, 0.1) 0%, rgba(118, 75, 162, 0.1) 100%); border: 1px solid var(--primary); padding: 1.5rem; border-radius: 16px; display: flex; flex-direction: column; justify-content: center; position: relative; overflow: hidden;">
+                <div style="position: absolute; right: -20px; bottom: -20px; font-size: 8rem; opacity: 0.05; pointer-events: none; transform: rotate(15deg);">💡</div>
+                <div style="font-size: 1.5rem; margin-bottom: 0.6rem;">💡</div>
+                <h3 style="color: var(--primary); font-size: 1.25rem; font-weight: 800; margin-bottom: 0.5rem;">${insightHeader}</h3>
+                <p style="color: var(--text); font-size: 0.95rem; line-height: 1.6; margin-bottom: 1rem;">
+                    "${insightText}"
+                </p>
+                <div style="font-size: 0.8rem; font-weight: 600; color: var(--text-light); text-transform: uppercase; letter-spacing: 1px;">
+                    ⚡ Personal Progress Coach
+                </div>
+            </div>
+        </div>
+    `;
+    
+    $('#analyticsContent').innerHTML = html;
+}
+
+window.adjustMonth = function(direction) {
+    currentDate.setMonth(currentDate.getMonth() + direction);
+    updateDateDisplay();
+    renderAnalyticsView();
+};
+
 function render() {
     updateDateDisplay();
 
@@ -656,9 +901,12 @@ function render() {
     if (currentView === 'week') {
         $('#weekView').classList.add('active');
         renderWeekView();
-    } else {
+    } else if (currentView === 'day') {
         $('#dayView').classList.add('active');
         renderDayView();
+    } else if (currentView === 'analytics') {
+        $('#analyticsView').classList.add('active');
+        renderAnalyticsView();
     }
 }
 

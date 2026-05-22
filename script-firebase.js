@@ -665,10 +665,173 @@ function editTask(id) {
     }
 }
 
+/* ===================== AUTHENTICATION SYSTEM ===================== */
+let isGuestModeActive = false;
+let authMode = 'login'; // 'login' or 'signup'
+
+function initAuth() {
+    if (!useFirebase || !db) {
+        // If Firebase failed to initialize, default to offline guest mode automatically
+        isGuestModeActive = true;
+        useFirebase = false;
+        $('#authModal').style.display = 'none';
+        loadTasks().then(() => render());
+        return;
+    }
+
+    const auth = firebase.auth();
+
+    // Listen for auth state changes
+    auth.onAuthStateChanged(async (user) => {
+        if (user) {
+            // User is signed in
+            currentUserId = user.uid;
+            isGuestModeActive = false;
+            useFirebase = true;
+            
+            // Extract username from virtual email
+            const username = user.email.split('@')[0];
+            $('#usernameDisplay').textContent = username;
+            $('#userProfile').style.display = 'flex';
+            $('#authModal').style.display = 'none';
+            
+            updateSyncStatus('Synced', true);
+            await loadTasks();
+            render();
+        } else {
+            // User is signed out
+            currentUserId = 'anonymous_user';
+            $('#userProfile').style.display = 'none';
+            
+            if (isGuestModeActive) {
+                // If they bypassed it with guest mode
+                useFirebase = false;
+                $('#authModal').style.display = 'none';
+                updateSyncStatus('Local Storage', false);
+                await loadTasks();
+                render();
+            } else {
+                // Show Auth modal
+                showAuthModal();
+            }
+        }
+    });
+
+    // Form submission (Login / Sign Up)
+    $('#authForm').addEventListener('submit', async (e) => {
+        e.preventDefault();
+        const username = $('#authUsername').value.trim().toLowerCase();
+        const password = $('#authPassword').value;
+        const errorEl = $('#authError');
+        
+        // Hide previous error
+        errorEl.style.display = 'none';
+        errorEl.textContent = '';
+        
+        // Programmatically translate username to virtual email
+        const email = `${username}@lifescheduler.local`;
+        
+        const submitBtn = $('#authSubmitBtn');
+        submitBtn.disabled = true;
+        submitBtn.textContent = authMode === 'login' ? 'Logging in...' : 'Signing up...';
+
+        try {
+            if (authMode === 'login') {
+                await auth.signInWithEmailAndPassword(email, password);
+            } else {
+                await auth.createUserWithEmailAndPassword(email, password);
+            }
+        } catch (error) {
+            console.error('Auth error:', error);
+            errorEl.textContent = getAuthErrorMessage(error);
+            errorEl.style.display = 'block';
+            submitBtn.disabled = false;
+            submitBtn.textContent = authMode === 'login' ? 'Log In' : 'Sign Up';
+        }
+    });
+
+    // Toggle Link (Login <-> Signup)
+    $('#authToggleLink').addEventListener('click', () => {
+        const errorEl = $('#authError');
+        errorEl.style.display = 'none';
+        
+        if (authMode === 'login') {
+            authMode = 'signup';
+            $('#authTitle').textContent = 'Sign Up';
+            $('#authSubtitle').textContent = 'Create your secure personal schedule';
+            $('#authSubmitBtn').textContent = 'Sign Up';
+            $('#authToggleText').textContent = 'Already have an account?';
+            $('#authToggleLink').textContent = 'Log In';
+        } else {
+            authMode = 'login';
+            $('#authTitle').textContent = 'Log In';
+            $('#authSubtitle').textContent = 'Access your personal Life System schedule';
+            $('#authSubmitBtn').textContent = 'Log In';
+            $('#authToggleText').textContent = "Don't have an account?";
+            $('#authToggleLink').textContent = 'Sign Up';
+        }
+    });
+
+    // Sign Out Button
+    $('#signOutBtn').addEventListener('click', async () => {
+        try {
+            isGuestModeActive = false; // Reset guest mode on active log out
+            await auth.signOut();
+        } catch (error) {
+            console.error('Error signing out:', error);
+        }
+    });
+
+    // Guest Mode Button
+    $('#authGuestBtn').addEventListener('click', async () => {
+        isGuestModeActive = true;
+        useFirebase = false;
+        $('#authModal').style.display = 'none';
+        updateSyncStatus('Local Storage', false);
+        await loadTasks();
+        render();
+    });
+}
+
+function showAuthModal() {
+    $('#authModal').style.display = 'flex';
+    $('#authForm').reset();
+    $('#authError').style.display = 'none';
+    
+    // Set default mode to login
+    authMode = 'login';
+    $('#authTitle').textContent = 'Log In';
+    $('#authSubtitle').textContent = 'Access your personal Life System schedule';
+    $('#authSubmitBtn').textContent = 'Log In';
+    $('#authToggleText').textContent = "Don't have an account?";
+    $('#authToggleLink').textContent = 'Sign Up';
+    $('#authSubmitBtn').disabled = false;
+}
+
+function getAuthErrorMessage(error) {
+    switch (error.code) {
+        case 'auth/invalid-email':
+            return 'Invalid username format. Try simple alphanumeric characters.';
+        case 'auth/user-disabled':
+            return 'This account has been disabled.';
+        case 'auth/user-not-found':
+            return 'Username not found. Create a new account by clicking "Sign Up" below!';
+        case 'auth/wrong-password':
+            return 'Incorrect password. Please try again.';
+        case 'auth/email-already-in-use':
+            return 'This username is already taken. Please choose another one.';
+        case 'auth/weak-password':
+            return 'Password is too weak. Make it at least 6 characters long.';
+        case 'auth/operation-not-allowed':
+            return 'Signing up with email/password is currently disabled in your Firebase console. Go to Auth settings and enable Email/Password!';
+        default:
+            return error.message;
+    }
+}
+
 /* ===================== INITIALIZATION ===================== */
 document.addEventListener('DOMContentLoaded', async () => {
     await initializeFirebase();
-    await loadTasks();
     initTheme();
-    render();
+    initAuth();
 });

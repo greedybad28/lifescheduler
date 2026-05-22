@@ -45,10 +45,12 @@
         </nav>
 
         <!-- View Toggle -->
-        <div class="view-toggle">
+        <div class="view-toggle" style="display: flex; align-items: center; justify-content: flex-start; gap: 0.5rem; width: 100%;">
             <button class="view-btn active" data-view="week">Week</button>
             <button class="view-btn" data-view="day">Day</button>
+            <button class="view-btn" id="editTemplateBtn" style="border: 1px solid var(--accent); color: var(--accent); margin-left: auto; background: transparent; font-size: 0.85rem; padding: 0.5rem 0.8rem; border-radius: 20px; font-weight: 600; cursor: pointer; transition: all 0.3s;">⚙️ Edit Template</button>
         </div>
+
 
         <!-- Calendar Section -->
         <main class="calendar-section">
@@ -152,6 +154,83 @@
                 </div>
                 
                 <button id="authGuestBtn" class="auth-guest-btn">Use Offline (Guest Mode)</button>
+            </div>
+        </div>
+
+        <!-- Premium Onboarding Modal (Overlay) -->
+        <div id="onboardingModal" class="auth-modal" style="display: none;">
+            <div class="auth-container" style="max-width: 440px;">
+                <div class="auth-logo">🚀</div>
+                <h2 class="auth-title">Welcome to Life System!</h2>
+                <p class="auth-subtitle">Set up your weekly routine template. Choose to start with a blank canvas or load our pre-configured healthy schedule routine.</p>
+                
+                <button id="onboardingHealthyBtn" class="auth-btn" style="margin-bottom: 1rem;">
+                    🌱 Load Pre-Configured Healthy Routine
+                </button>
+                <p style="font-size: 0.75rem; color: var(--text-light); margin-top: -0.6rem; margin-bottom: 1.2rem; line-height: 1.4; text-align: center;">
+                    Includes 3:30 AM wake-up ritual, work blocks, gym, piano, coding, and recovery times.
+                </p>
+                
+                <button id="onboardingBlankBtn" class="auth-guest-btn" style="border-color: var(--primary); color: var(--primary); padding: 0.8rem; font-weight: 600;">
+                    🧹 Start from Scratch (Blank Canvas)
+                </button>
+                <p style="font-size: 0.75rem; color: var(--text-light); margin-top: 0.4rem; line-height: 1.4; text-align: center;">
+                    A clean slate where you have full control to define your own blocks for each day.
+                </p>
+            </div>
+        </div>
+
+        <!-- Premium Template Editor Modal (Overlay) -->
+        <div id="templateModal" class="modal">
+            <div class="modal-content" style="max-width: 600px; max-height: 90vh; overflow-y: auto;">
+                <div class="modal-header">
+                    <h2>⚙️ Edit Weekly Template</h2>
+                    <button class="close-btn" id="closeTemplateBtn">&times;</button>
+                </div>
+                
+                <div class="form-group" style="margin-bottom: 1.2rem;">
+                    <label for="templateDaySelect" style="font-weight: 700;">Select Day to Edit:</label>
+                    <select id="templateDaySelect" style="width: 100%; padding: 0.8rem; background: var(--bg-secondary); border: 2px solid var(--border); border-radius: 8px; color: var(--text); font-family: inherit; font-size: 1rem;">
+                        <option value="0">Sunday</option>
+                        <option value="1">Monday</option>
+                        <option value="2">Tuesday</option>
+                        <option value="3">Wednesday</option>
+                        <option value="4">Thursday</option>
+                        <option value="5">Friday</option>
+                        <option value="6">Saturday</option>
+                    </select>
+                </div>
+                
+                <h3 style="font-size: 0.95rem; color: var(--primary); font-weight: 700; margin-bottom: 0.6rem; border-bottom: 1px solid var(--border); padding-bottom: 0.4rem;">Configured Template Blocks</h3>
+                <div id="templateBlocksList" style="margin-bottom: 1.5rem; max-height: 220px; overflow-y: auto; padding-right: 0.3rem;">
+                    <!-- Blocks injected here -->
+                </div>
+                
+                <div style="border-top: 2px dashed var(--border); padding-top: 1.2rem; margin-top: 1rem;">
+                    <h3 style="font-size: 1rem; color: var(--primary); margin-bottom: 0.8rem;" id="templateFormTitle">Add New Block</h3>
+                    <form id="templateBlockForm">
+                        <div class="form-group" style="margin-bottom: 0.8rem;">
+                            <label for="templateTime" style="font-size: 0.85rem; font-weight: 600; display: block; margin-bottom: 0.3rem;">Time Block Range:</label>
+                            <input type="text" id="templateTime" placeholder="e.g., 3:30 AM or 1:00 PM - 5:00 PM" required style="width: 100%; padding: 0.7rem; border-radius: 8px; border: 2px solid var(--border); background: var(--bg-secondary); color: var(--text);">
+                        </div>
+                        <div class="form-group" style="margin-bottom: 0.8rem;">
+                            <label for="templateTitle" style="font-size: 0.85rem; font-weight: 600; display: block; margin-bottom: 0.3rem;">Block Title:</label>
+                            <input type="text" id="templateTitle" placeholder="e.g., Coding / Gym / Morning Ritual" required style="width: 100%; padding: 0.7rem; border-radius: 8px; border: 2px solid var(--border); background: var(--bg-secondary); color: var(--text);">
+                        </div>
+                        <div class="form-group" style="margin-bottom: 1.2rem;">
+                            <label for="templateDesc" style="font-size: 0.85rem; font-weight: 600; display: block; margin-bottom: 0.3rem;">Short Description (optional):</label>
+                            <input type="text" id="templateDesc" placeholder="e.g., Practice skills, work on project portfolio" style="width: 100%; padding: 0.7rem; border-radius: 8px; border: 2px solid var(--border); background: var(--bg-secondary); color: var(--text);">
+                        </div>
+                        <div style="display: flex; gap: 0.5rem;">
+                            <button type="submit" id="templateSaveBlockBtn" class="btn btn-primary" style="padding: 0.7rem 1.2rem; font-size: 0.9rem; flex: 1;">Add to Template</button>
+                            <button type="button" id="templateCancelEditBtn" class="btn btn-secondary" style="display: none; padding: 0.7rem 1.2rem; font-size: 0.9rem; flex: 1;">Cancel Edit</button>
+                        </div>
+                    </form>
+                </div>
+                
+                <div style="display: flex; gap: 1rem; margin-top: 1.8rem; border-top: 1px solid var(--border); padding-top: 1rem;">
+                    <button id="templateSaveAllBtn" class="btn btn-primary" style="background: linear-gradient(135deg, var(--primary) 0%, var(--accent) 100%); width: 100%; font-weight: 750; font-size: 0.95rem; border-radius: 10px; padding: 0.9rem;">💾 Save Template & Close</button>
+                </div>
             </div>
         </div>
     </div>

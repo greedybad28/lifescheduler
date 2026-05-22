@@ -40,7 +40,7 @@ const STORAGE_KEY = 'lifesystem_tasks';
 const SCHEDULE_STATUS_KEY = 'lifesystem_schedule_status';
 const SCHEDULE_NOTES_KEY = 'lifesystem_schedule_notes';
 
-// Default weekly schedule
+// Default weekly schedule (User's healthy routine inspiration)
 const DEFAULT_SCHEDULE = {
     0: { // Sunday
         blocks: [
@@ -151,6 +151,10 @@ let isDarkMode = localStorage.getItem('darkMode') === 'true';
 let editingTaskId = null;
 let editingScheduleBlock = null;
 
+// User custom weekly schedule
+let weeklySchedule = JSON.parse(JSON.stringify(DEFAULT_SCHEDULE));
+let editingTemplateBlockIdx = null;
+
 // Load data from Firestore or localStorage
 async function loadTasks() {
     try {
@@ -169,6 +173,15 @@ async function loadTasks() {
             const notesDoc = await db.collection('users').doc(currentUserId).collection('data').doc('scheduleNotes').get();
             scheduleNotes = notesDoc.exists ? notesDoc.data() : {};
 
+            // Load weekly template
+            const templateDoc = await db.collection('users').doc(currentUserId).collection('data').doc('scheduleTemplate').get();
+            if (templateDoc.exists) {
+                weeklySchedule = templateDoc.data().template;
+            } else {
+                // Brand new user detected! Show onboarding choice modal
+                showOnboardingModal();
+            }
+
             updateSyncStatus('Synced', true);
         } else {
             // Fallback to localStorage
@@ -180,6 +193,11 @@ async function loadTasks() {
             
             const notesStored = localStorage.getItem(SCHEDULE_NOTES_KEY);
             scheduleNotes = notesStored ? JSON.parse(notesStored) : {};
+
+            const templateStored = localStorage.getItem('lifesystem_schedule_template');
+            if (templateStored) {
+                weeklySchedule = JSON.parse(templateStored);
+            }
         }
     } catch (error) {
         console.error('Error loading tasks:', error);
@@ -230,6 +248,19 @@ async function saveScheduleNotes() {
         }
     } catch (error) {
         console.error('Error saving notes:', error);
+    }
+}
+
+// Save dynamic weekly schedule
+async function saveWeeklySchedule() {
+    try {
+        if (useFirebase && db) {
+            await db.collection('users').doc(currentUserId).collection('data').doc('scheduleTemplate').set({ template: weeklySchedule });
+        } else {
+            localStorage.setItem('lifesystem_schedule_template', JSON.stringify(weeklySchedule));
+        }
+    } catch (error) {
+        console.error('Error saving template:', error);
     }
 }
 
@@ -448,6 +479,7 @@ $('#todayBtn').addEventListener('click', () => {
 /* ===================== VIEW MANAGEMENT ===================== */
 $$('.view-btn').forEach(btn => {
     btn.addEventListener('click', (e) => {
+        if (e.target.id === 'editTemplateBtn') return; // Bypass layout selection logic
         $$('.view-btn').forEach(b => b.classList.remove('active'));
         e.target.classList.add('active');
         currentView = e.target.dataset.view;
@@ -468,7 +500,9 @@ function renderWeekView() {
         const dayName = DAY_NAMES[dayOfWeek];
         const isToday = formatDate(new Date()) === dateStr;
         const dayTasks = getTasksForDate(date);
-        const scheduleBlocks = DEFAULT_SCHEDULE[dayOfWeek].blocks;
+        
+        const dayData = weeklySchedule[dayOfWeek] || { blocks: [] };
+        const scheduleBlocks = dayData.blocks;
         
         let completedBlocks = 0;
         scheduleBlocks.forEach((block, idx) => {
@@ -533,7 +567,9 @@ function renderDayView() {
     const dayOfWeek = date.getDay();
     const dayName = DAY_NAMES[dayOfWeek];
     const dayTasks = getTasksForDate(date);
-    const scheduleBlocks = DEFAULT_SCHEDULE[dayOfWeek].blocks;
+    
+    const dayData = weeklySchedule[dayOfWeek] || { blocks: [] };
+    const scheduleBlocks = dayData.blocks;
 
     let html = `
         <div class="day-detail-header">
@@ -828,6 +864,164 @@ function getAuthErrorMessage(error) {
             return error.message;
     }
 }
+
+/* ===================== ONBOARDING & TEMPLATE EDITOR SYSTEM ===================== */
+function showOnboardingModal() {
+    $('#onboardingModal').style.display = 'flex';
+}
+
+$('#onboardingHealthyBtn').addEventListener('click', async () => {
+    weeklySchedule = JSON.parse(JSON.stringify(DEFAULT_SCHEDULE));
+    await saveWeeklySchedule();
+    $('#onboardingModal').style.display = 'none';
+    render();
+});
+
+$('#onboardingBlankBtn').addEventListener('click', async () => {
+    weeklySchedule = {
+        0: { blocks: [], rest: true },
+        1: { blocks: [] },
+        2: { blocks: [] },
+        3: { blocks: [] },
+        4: { blocks: [] },
+        5: { blocks: [] },
+        6: { blocks: [] }
+    };
+    await saveWeeklySchedule();
+    $('#onboardingModal').style.display = 'none';
+    render();
+});
+
+// Template Editor Modal Logic
+function openTemplateEditor() {
+    $('#templateModal').style.display = 'flex';
+    $('#templateDaySelect').value = "1"; // Default to Monday
+    editingTemplateBlockIdx = null;
+    $('#templateBlockForm').reset();
+    $('#templateCancelEditBtn').style.display = 'none';
+    $('#templateFormTitle').textContent = 'Add New Block';
+    $('#templateSaveBlockBtn').textContent = 'Add to Template';
+    renderTemplateBlocksList();
+}
+
+function closeTemplateEditor() {
+    $('#templateModal').style.display = 'none';
+}
+
+$('#editTemplateBtn').addEventListener('click', openTemplateEditor);
+$('#closeTemplateBtn').addEventListener('click', closeTemplateEditor);
+
+$('#templateCancelEditBtn').addEventListener('click', () => {
+    editingTemplateBlockIdx = null;
+    $('#templateBlockForm').reset();
+    $('#templateCancelEditBtn').style.display = 'none';
+    $('#templateFormTitle').textContent = 'Add New Block';
+    $('#templateSaveBlockBtn').textContent = 'Add to Template';
+});
+
+$('#templateDaySelect').addEventListener('change', () => {
+    editingTemplateBlockIdx = null;
+    $('#templateBlockForm').reset();
+    $('#templateCancelEditBtn').style.display = 'none';
+    $('#templateFormTitle').textContent = 'Add New Block';
+    $('#templateSaveBlockBtn').textContent = 'Add to Template';
+    renderTemplateBlocksList();
+});
+
+// Render the list of blocks for the selected day in the editor
+function renderTemplateBlocksList() {
+    const day = parseInt($('#templateDaySelect').value);
+    const dayData = weeklySchedule[day];
+    const container = $('#templateBlocksList');
+    
+    if (!dayData || !dayData.blocks || dayData.blocks.length === 0) {
+        container.innerHTML = '<div style="text-align: center; color: var(--text-light); padding: 1rem; font-size: 0.9rem;">No blocks configured for this day. Add one below!</div>';
+        return;
+    }
+    
+    container.innerHTML = dayData.blocks.map((block, idx) => `
+        <div class="task-item" style="border-left: 3px solid var(--accent); margin-bottom: 0.5rem; background: var(--bg-secondary); padding: 0.6rem 0.8rem; border-radius: 8px; display: flex; justify-content: space-between; align-items: center;">
+            <div class="task-content">
+                <div class="task-time" style="color: var(--accent); font-weight: 600; font-size: 0.85rem;">⏰ ${block.time}</div>
+                <div class="task-title" style="font-weight: 600; margin-top: 0.1rem; font-size: 0.95rem;">${block.title}</div>
+                ${block.description ? `<p style="font-size: 0.8rem; color: var(--text-light); margin-top: 0.1rem;">${block.description}</p>` : ''}
+            </div>
+            <div class="task-actions" style="display: flex; gap: 0.3rem;">
+                <button class="task-btn edit" onclick="editTemplateBlock(${idx})">✏️</button>
+                <button class="task-btn delete" onclick="deleteTemplateBlock(${idx})">🗑️</button>
+            </div>
+        </div>
+    `).join('');
+}
+
+// Edit a template block
+window.editTemplateBlock = function(idx) {
+    const day = parseInt($('#templateDaySelect').value);
+    const block = weeklySchedule[day].blocks[idx];
+    if (block) {
+        editingTemplateBlockIdx = idx;
+        $('#templateTime').value = block.time;
+        $('#templateTitle').value = block.title;
+        $('#templateDesc').value = block.description || '';
+        
+        $('#templateFormTitle').textContent = 'Edit Block';
+        $('#templateSaveBlockBtn').textContent = 'Update Block';
+        $('#templateCancelEditBtn').style.display = 'block';
+    }
+};
+
+// Delete a template block
+window.deleteTemplateBlock = function(idx) {
+    if (confirm('Are you sure you want to delete this template block?')) {
+        const day = parseInt($('#templateDaySelect').value);
+        weeklySchedule[day].blocks.splice(idx, 1);
+        renderTemplateBlocksList();
+    }
+};
+
+// Form submit to add or update a block
+$('#templateBlockForm').addEventListener('submit', (e) => {
+    e.preventDefault();
+    const day = parseInt($('#templateDaySelect').value);
+    const time = $('#templateTime').value.trim();
+    const title = $('#templateTitle').value.trim();
+    const description = $('#templateDesc').value.trim();
+    
+    const blockData = { time, title, description };
+    
+    if (!weeklySchedule[day]) {
+        weeklySchedule[day] = { blocks: [] };
+    }
+    
+    if (editingTemplateBlockIdx !== null) {
+        // Update block
+        weeklySchedule[day].blocks[editingTemplateBlockIdx] = blockData;
+        editingTemplateBlockIdx = null;
+        $('#templateCancelEditBtn').style.display = 'none';
+        $('#templateFormTitle').textContent = 'Add New Block';
+        $('#templateSaveBlockBtn').textContent = 'Add to Template';
+    } else {
+        // Add new block
+        weeklySchedule[day].blocks.push(blockData);
+    }
+    
+    $('#templateBlockForm').reset();
+    renderTemplateBlocksList();
+});
+
+// Save all changes to cloud
+$('#templateSaveAllBtn').addEventListener('click', async () => {
+    const btn = $('#templateSaveAllBtn');
+    btn.disabled = true;
+    btn.textContent = 'Saving to Cloud...';
+    
+    await saveWeeklySchedule();
+    
+    btn.disabled = false;
+    btn.textContent = '💾 Save Template & Close';
+    closeTemplateEditor();
+    render();
+});
 
 /* ===================== INITIALIZATION ===================== */
 document.addEventListener('DOMContentLoaded', async () => {

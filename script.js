@@ -316,9 +316,20 @@ async function deleteTask(id) {
 }
 
 // Toggle schedule item completion
-function toggleScheduleItem(dateStr, blockIndex) {
+function toggleScheduleItem(dateStr, blockIndex, statusToSet) {
     const key = `${dateStr}_${blockIndex}`;
-    scheduleStatus[key] = !scheduleStatus[key];
+    
+    // Support legacy binary toggle if statusToSet is not provided
+    if (!statusToSet) {
+        scheduleStatus[key] = !scheduleStatus[key];
+    } else {
+        if (scheduleStatus[key] === statusToSet) {
+            scheduleStatus[key] = 'pending'; // revert to pending
+        } else {
+            scheduleStatus[key] = statusToSet;
+        }
+    }
+    
     saveScheduleStatus();
     render();
 }
@@ -326,7 +337,13 @@ function toggleScheduleItem(dateStr, blockIndex) {
 // Check if schedule item is completed
 function isScheduleItemCompleted(dateStr, blockIndex) {
     const key = `${dateStr}_${blockIndex}`;
-    return scheduleStatus[key] || false;
+    return scheduleStatus[key] === 'completed' || scheduleStatus[key] === true;
+}
+
+// Check if schedule item is failed / Not Done
+function isScheduleItemFailed(dateStr, blockIndex) {
+    const key = `${dateStr}_${blockIndex}`;
+    return scheduleStatus[key] === 'failed';
 }
 
 // Get schedule notes
@@ -603,11 +620,19 @@ function renderWeekView() {
                             <div style="font-size: 0.8rem; font-weight: 600; color: var(--text-light); margin-bottom: 0.5rem;">Schedule:</div>
                             ${scheduleBlocks.map((block, idx) => {
                                 const isCompleted = isScheduleItemCompleted(dateStr, idx);
+                                const isFailed = isScheduleItemFailed(dateStr, idx);
                                 return `
-                                    <div class="schedule-check-item ${isCompleted ? 'completed' : ''}" onclick="event.stopPropagation(); toggleScheduleItem('${dateStr}', ${idx})">
-                                        <input type="checkbox" ${isCompleted ? 'checked' : ''}>
-                                        <span class="check-time">${block.time.split(' - ')[0]}</span>
-                                        <span class="check-title">${block.title}</span>
+                                    <div class="schedule-check-item ${isCompleted ? 'completed' : ''} ${isFailed ? 'failed' : ''}" onclick="event.stopPropagation()">
+                                        <div style="display: flex; align-items: center; justify-content: space-between; width: 100%; gap: 0.2rem;">
+                                            <div style="display: flex; align-items: center; gap: 0.3rem; min-width: 0; flex: 1;">
+                                                <span class="check-time" style="font-size: 0.75rem; color: var(--text-light); font-weight: 600; flex-shrink: 0;">${block.time.split(' - ')[0]}</span>
+                                                <span class="check-title" style="font-weight: 600; font-size: 0.85rem; text-decoration: ${isCompleted || isFailed ? 'line-through' : 'none'}; color: ${isFailed ? 'var(--danger)' : (isCompleted ? 'var(--success)' : 'inherit')}; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">${block.title}</span>
+                                            </div>
+                                            <div style="display: flex; gap: 0.15rem; flex-shrink: 0;">
+                                                <button class="task-btn check" style="padding: 0.1rem 0.2rem; font-size: 0.75rem; border-radius: 4px; background: ${isCompleted ? 'var(--success)' : 'transparent'}; color: ${isCompleted ? 'white' : 'inherit'}; border: 1px solid ${isCompleted ? 'var(--success)' : 'var(--border)'};" onclick="toggleScheduleItem('${dateStr}', ${idx}, 'completed')">✔️</button>
+                                                <button class="task-btn cross" style="padding: 0.1rem 0.2rem; font-size: 0.75rem; border-radius: 4px; background: ${isFailed ? 'var(--danger)' : 'transparent'}; color: ${isFailed ? 'white' : 'inherit'}; border: 1px solid ${isFailed ? 'var(--danger)' : 'var(--border)'};" onclick="toggleScheduleItem('${dateStr}', ${idx}, 'failed')">❌</button>
+                                            </div>
+                                        </div>
                                     </div>
                                 `;
                             }).join('')}
@@ -620,7 +645,15 @@ function renderWeekView() {
                                 <div class="task-content">
                                     <div class="task-time">${task.time}</div>
                                     <div class="task-title">${task.title}</div>
-                                    <span class="task-category" style="background-color: ${CATEGORY_COLORS[task.category] || 'var(--primary)'};">${task.category}</span>
+                                    <div style="display: flex; align-items: center; flex-wrap: wrap; gap: 0.25rem; margin-top: 0.3rem;">
+                                        <span class="task-category" style="background-color: ${CATEGORY_COLORS[task.category] || 'var(--primary)'}; margin-top: 0; padding: 0.1rem 0.4rem; font-size: 0.65rem;">${task.category}</span>
+                                        <span class="task-status-badge ${task.status}" style="margin-top: 0; padding: 0.1rem 0.4rem; font-size: 0.65rem; font-weight: 700; border-radius: 4px; text-transform: uppercase; ${
+                                            task.status === 'completed' ? 'background: rgba(72,187,120,0.15); color: var(--success);' :
+                                            task.status === 'failed' ? 'background: rgba(245,101,101,0.15); color: var(--danger);' :
+                                            task.status === 'in-progress' ? 'background: rgba(246,173,85,0.15); color: var(--warning);' :
+                                            'background: rgba(113,128,150,0.15); color: var(--text-light);'
+                                        }">${task.status === 'failed' ? 'Not Done' : task.status === 'completed' ? 'Completed' : task.status === 'in-progress' ? 'In Progress' : 'Pending'}</span>
+                                    </div>
                                 </div>
                                 <div class="task-actions" style="align-items: center; gap: 0.25rem;">
                                     <button class="task-btn check" style="background: ${task.status === 'completed' ? 'var(--success)' : 'transparent'}; color: ${task.status === 'completed' ? 'white' : 'inherit'}; border-color: ${task.status === 'completed' ? 'var(--success)' : 'var(--border)'};" onclick="toggleTaskStatus('${task.id}', 'completed')">✔️</button>
@@ -660,19 +693,23 @@ function renderDayView() {
         <div class="schedule-blocks">
             ${scheduleBlocks.map((block, idx) => {
                 const isCompleted = isScheduleItemCompleted(dateStr, idx);
+                const isFailed = isScheduleItemFailed(dateStr, idx);
                 const taskInBlock = dayTasks.filter(t => {
                     const [startTime] = block.time.split(' - ');
                     return t.time.includes(startTime.trim());
                 });
 
                 return `
-                    <div class="schedule-block ${isCompleted ? 'completed' : ''}">
+                    <div class="schedule-block ${isCompleted ? 'completed' : ''} ${isFailed ? 'failed' : ''}">
                         <div style="display: flex; align-items: center; gap: 0.8rem;">
-                            <input type="checkbox" class="schedule-checkbox" ${isCompleted ? 'checked' : ''} onchange="toggleScheduleItem('${dateStr}', ${idx})">
-                            <div style="flex: 1;">
-                                <div class="schedule-time">⏰ ${block.time}</div>
-                                <div class="schedule-title">${block.title}</div>
-                                <div class="schedule-desc">${block.description}</div>
+                            <div class="task-actions" style="align-items: center; gap: 0.2rem; flex-shrink: 0; display: flex; flex-direction: column;">
+                                <button class="task-btn check" style="width: 26px; height: 26px; font-size: 0.85rem; border-radius: 6px; background: ${isCompleted ? 'var(--success)' : 'transparent'}; color: ${isCompleted ? 'white' : 'inherit'}; border: 1px solid ${isCompleted ? 'var(--success)' : 'var(--border)'};" onclick="toggleScheduleItem('${dateStr}', ${idx}, 'completed')">✔️</button>
+                                <button class="task-btn cross" style="width: 26px; height: 26px; font-size: 0.85rem; border-radius: 6px; background: ${isFailed ? 'var(--danger)' : 'transparent'}; color: ${isFailed ? 'white' : 'inherit'}; border: 1px solid ${isFailed ? 'var(--danger)' : 'var(--border)'};" onclick="toggleScheduleItem('${dateStr}', ${idx}, 'failed')">❌</button>
+                            </div>
+                            <div style="flex: 1; min-width: 0;">
+                                <div class="schedule-time" style="color: ${isFailed ? 'var(--danger)' : (isCompleted ? 'var(--success)' : 'var(--primary)')}; font-weight: 700;">⏰ ${block.time}</div>
+                                <div class="schedule-title" style="text-decoration: ${isCompleted || isFailed ? 'line-through' : 'none'}; color: ${isFailed ? 'var(--text-light)' : 'inherit'}; font-weight: 700; font-size: 1.1rem; margin-top: 0.1rem;">${block.title}</div>
+                                <div class="schedule-desc" style="color: var(--text-light); font-size: 0.9rem; margin-top: 0.2rem;">${block.description}</div>
                                 ${getScheduleNotes(dateStr, idx) ? `<div style="margin-top: 0.8rem; padding: 0.8rem; background: rgba(72, 187, 120, 0.1); border-radius: 6px; border-left: 3px solid var(--success); font-size: 0.9rem; color: var(--text-light);">📝 ${getScheduleNotes(dateStr, idx)}</div>` : ''}
                             </div>
                             <button class="task-btn edit" style="margin-left: 0.5rem; align-self: flex-start; margin-top: 0.2rem;" onclick="openScheduleBlockEditor('${dateStr}', ${idx})">✏️</button>
@@ -682,8 +719,16 @@ function renderDayView() {
                                 ${taskInBlock.map(task => `
                                     <div class="task-item ${task.status}">
                                         <div class="task-content">
-                                            <div class="task-title">${task.title}</div>
-                                            <span class="task-category" style="background-color: ${CATEGORY_COLORS[task.category] || 'var(--primary)'};">${task.category}</span>
+                                            <div class="task-title" style="font-weight: 600;">${task.title}</div>
+                                            <div style="display: flex; align-items: center; flex-wrap: wrap; gap: 0.25rem; margin-top: 0.3rem;">
+                                                <span class="task-category" style="background-color: ${CATEGORY_COLORS[task.category] || 'var(--primary)'}; margin-top: 0; padding: 0.1rem 0.4rem; font-size: 0.65rem;">${task.category}</span>
+                                                <span class="task-status-badge ${task.status}" style="margin-top: 0; padding: 0.1rem 0.4rem; font-size: 0.65rem; font-weight: 700; border-radius: 4px; text-transform: uppercase; ${
+                                                    task.status === 'completed' ? 'background: rgba(72,187,120,0.15); color: var(--success);' :
+                                                    task.status === 'failed' ? 'background: rgba(245,101,101,0.15); color: var(--danger);' :
+                                                    task.status === 'in-progress' ? 'background: rgba(246,173,85,0.15); color: var(--warning);' :
+                                                    'background: rgba(113,128,150,0.15); color: var(--text-light);'
+                                                }">${task.status === 'failed' ? 'Not Done' : task.status === 'completed' ? 'Completed' : task.status === 'in-progress' ? 'In Progress' : 'Pending'}</span>
+                                            </div>
                                             ${task.notes ? `<p style="font-size: 0.85rem; color: var(--text-light); margin-top: 0.3rem;">${task.notes}</p>` : ''}
                                         </div>
                                         <div class="task-actions" style="align-items: center; gap: 0.25rem;">
@@ -705,12 +750,20 @@ function renderDayView() {
                 <h3 style="color: var(--primary); margin-bottom: 1rem;">Custom Tasks</h3>
                 <div class="schedule-blocks">
                     ${dayTasks.map(task => `
-                        <div class="schedule-block">
+                        <div class="schedule-block ${task.status === 'completed' ? 'completed' : ''} ${task.status === 'failed' ? 'failed' : ''}">
                             <div style="display: flex; align-items: center; gap: 0.8rem;">
-                                <div style="flex: 1;">
-                                    <div class="schedule-time">⏰ ${task.time}</div>
-                                    <div class="schedule-title">${task.title}</div>
-                                    <span class="task-category" style="background-color: ${CATEGORY_COLORS[task.category] || 'var(--primary)'};">${task.category}</span>
+                                <div style="flex: 1; min-width: 0;">
+                                    <div class="schedule-time" style="color: ${task.status === 'failed' ? 'var(--danger)' : (task.status === 'completed' ? 'var(--success)' : 'var(--primary)')};">⏰ ${task.time}</div>
+                                    <div class="schedule-title" style="text-decoration: ${task.status === 'completed' || task.status === 'failed' ? 'line-through' : 'none'}; color: ${task.status === 'failed' ? 'var(--text-light)' : 'inherit'}; font-weight: 700; font-size: 1.1rem; margin-top: 0.1rem;">${task.title}</div>
+                                    <div style="display: flex; align-items: center; flex-wrap: wrap; gap: 0.25rem; margin-top: 0.4rem;">
+                                        <span class="task-category" style="background-color: ${CATEGORY_COLORS[task.category] || 'var(--primary)'}; margin-top: 0; padding: 0.1rem 0.4rem; font-size: 0.65rem;">${task.category}</span>
+                                        <span class="task-status-badge ${task.status}" style="margin-top: 0; padding: 0.1rem 0.4rem; font-size: 0.65rem; font-weight: 700; border-radius: 4px; text-transform: uppercase; ${
+                                            task.status === 'completed' ? 'background: rgba(72,187,120,0.15); color: var(--success);' :
+                                            task.status === 'failed' ? 'background: rgba(245,101,101,0.15); color: var(--danger);' :
+                                            task.status === 'in-progress' ? 'background: rgba(246,173,85,0.15); color: var(--warning);' :
+                                            'background: rgba(113,128,150,0.15); color: var(--text-light);'
+                                        }">${task.status === 'failed' ? 'Not Done' : task.status === 'completed' ? 'Completed' : task.status === 'in-progress' ? 'In Progress' : 'Pending'}</span>
+                                    </div>
                                     ${task.notes ? `<p style="font-size: 0.85rem; color: var(--text-light); margin-top: 0.5rem;">${task.notes}</p>` : ''}
                                 </div>
                                 <div class="task-actions" style="align-items: center; gap: 0.25rem;">
@@ -1066,6 +1119,8 @@ function editTask(id) {
     const task = tasks.find(t => t.id === id);
     if (task) {
         editingTaskId = id;
+        editingScheduleBlock = null;
+        
         $('#taskDate').value = task.date;
         $('#taskTime').value = task.time;
         $('#taskTitle').value = task.title;
@@ -1076,7 +1131,7 @@ function editTask(id) {
         $('#deleteBtn').style.display = 'flex';
         $('#submitBtn').textContent = 'Update Task';
         $('#scheduleNotesSection').style.display = 'none';
-        openModal();
+        modal.classList.add('active');
     }
 }
 

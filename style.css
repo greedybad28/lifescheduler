@@ -985,6 +985,16 @@ body.dark-mode .user-profile {
     opacity: 0.7;
 }
 
+.schedule-block.completed {
+    border-left-color: var(--success) !important;
+    background: rgba(72, 187, 120, 0.03);
+}
+
+.schedule-block.failed {
+    border-left-color: var(--danger) !important;
+    background: rgba(245, 101, 101, 0.03);
+}
+
 .task-btn.check, .task-btn.cross {
     display: inline-flex;
     align-items: center;

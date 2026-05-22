@@ -1,40 +1,3 @@
-/* ===================== FIREBASE INTEGRATION ===================== */
-let db = null;
-let currentUserId = 'anonymous_user';
-let useFirebase = false;
-
-// Initialize Firebase
-async function initializeFirebase() {
-    try {
-        // Get config from firebase-config.js
-        if (typeof firebaseConfig !== 'undefined' && firebaseConfig) {
-            // Initialize Firebase
-            firebase.initializeApp(firebaseConfig);
-            db = firebase.firestore();
-            useFirebase = true;
-            console.log('✅ Firebase initialized');
-            updateSyncStatus('Synced', true);
-            return true;
-        } else {
-            console.log('⚠️ Firebase config not available, using localStorage');
-            updateSyncStatus('Local Storage', false);
-            return false;
-        }
-    } catch (error) {
-        console.error('Firebase init error:', error);
-        updateSyncStatus('Offline', false);
-        return false;
-    }
-}
-
-function updateSyncStatus(status, synced) {
-    const statusEl = document.getElementById('syncStatus');
-    if (statusEl) {
-        statusEl.textContent = synced ? `📡 ${status}` : `⚠️ ${status}`;
-        statusEl.style.color = synced ? 'var(--success)' : 'var(--warning)';
-    }
-}
-
 /* ===================== STORAGE & UTILITIES ===================== */
 const STORAGE_KEY = 'lifesystem_tasks';
 const SCHEDULE_STATUS_KEY = 'lifesystem_schedule_status';
@@ -144,93 +107,38 @@ const DAY_NAMES = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Frid
 /* ===================== STATE MANAGEMENT ===================== */
 let currentDate = new Date();
 let tasks = [];
-let scheduleStatus = {};
-let scheduleNotes = {};
+let scheduleStatus = {}; // Tracks completion of default schedule items
+let scheduleNotes = {}; // Tracks notes for schedule items
 let currentView = 'week';
 let isDarkMode = localStorage.getItem('darkMode') === 'true';
 let editingTaskId = null;
 let editingScheduleBlock = null;
 
-// Load data from Firestore or localStorage
-async function loadTasks() {
-    try {
-        if (useFirebase && db) {
-            updateSyncStatus('Loading...', false);
-            
-            // Load tasks
-            const tasksSnapshot = await db.collection('users').doc(currentUserId).collection('tasks').get();
-            tasks = tasksSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-
-            // Load schedule status
-            const statusDoc = await db.collection('users').doc(currentUserId).collection('data').doc('scheduleStatus').get();
-            scheduleStatus = statusDoc.exists ? statusDoc.data() : {};
-
-            // Load schedule notes
-            const notesDoc = await db.collection('users').doc(currentUserId).collection('data').doc('scheduleNotes').get();
-            scheduleNotes = notesDoc.exists ? notesDoc.data() : {};
-
-            updateSyncStatus('Synced', true);
-        } else {
-            // Fallback to localStorage
-            const stored = localStorage.getItem(STORAGE_KEY);
-            tasks = stored ? JSON.parse(stored) : [];
-            
-            const statusStored = localStorage.getItem(SCHEDULE_STATUS_KEY);
-            scheduleStatus = statusStored ? JSON.parse(statusStored) : {};
-            
-            const notesStored = localStorage.getItem(SCHEDULE_NOTES_KEY);
-            scheduleNotes = notesStored ? JSON.parse(notesStored) : {};
-        }
-    } catch (error) {
-        console.error('Error loading tasks:', error);
-        updateSyncStatus('Offline', false);
-    }
+// Load tasks from storage
+function loadTasks() {
+    const stored = localStorage.getItem(STORAGE_KEY);
+    tasks = stored ? JSON.parse(stored) : [];
+    
+    const statusStored = localStorage.getItem(SCHEDULE_STATUS_KEY);
+    scheduleStatus = statusStored ? JSON.parse(statusStored) : {};
+    
+    const notesStored = localStorage.getItem(SCHEDULE_NOTES_KEY);
+    scheduleNotes = notesStored ? JSON.parse(notesStored) : {};
 }
 
-// Save tasks
-async function saveTasks() {
-    try {
-        if (useFirebase && db) {
-            updateSyncStatus('Saving...', false);
-            localStorage.setItem(STORAGE_KEY, JSON.stringify(tasks));
-            await Promise.all(tasks.map(task => {
-                const { id, ...data } = task;
-                return db.collection('users').doc(currentUserId).collection('tasks').doc(id).set(data, { merge: true });
-            }));
-            updateSyncStatus('Synced', true);
-        } else {
-            localStorage.setItem(STORAGE_KEY, JSON.stringify(tasks));
-        }
-    } catch (error) {
-        console.error('Error saving tasks:', error);
-        updateSyncStatus('Save failed', false);
-    }
+// Save tasks to storage
+function saveTasks() {
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(tasks));
 }
 
 // Save schedule status
-async function saveScheduleStatus() {
-    try {
-        if (useFirebase && db) {
-            await db.collection('users').doc(currentUserId).collection('data').doc('scheduleStatus').set(scheduleStatus);
-        } else {
-            localStorage.setItem(SCHEDULE_STATUS_KEY, JSON.stringify(scheduleStatus));
-        }
-    } catch (error) {
-        console.error('Error saving status:', error);
-    }
+function saveScheduleStatus() {
+    localStorage.setItem(SCHEDULE_STATUS_KEY, JSON.stringify(scheduleStatus));
 }
 
 // Save schedule notes
-async function saveScheduleNotes() {
-    try {
-        if (useFirebase && db) {
-            await db.collection('users').doc(currentUserId).collection('data').doc('scheduleNotes').set(scheduleNotes);
-        } else {
-            localStorage.setItem(SCHEDULE_NOTES_KEY, JSON.stringify(scheduleNotes));
-        }
-    } catch (error) {
-        console.error('Error saving notes:', error);
-    }
+function saveScheduleNotes() {
+    localStorage.setItem(SCHEDULE_NOTES_KEY, JSON.stringify(scheduleNotes));
 }
 
 // Add new task
@@ -253,21 +161,9 @@ function updateTask(id, updates) {
 }
 
 // Delete task
-async function deleteTask(id) {
+function deleteTask(id) {
     tasks = tasks.filter(t => t.id !== id);
-    try {
-        if (useFirebase && db) {
-            updateSyncStatus('Saving...', false);
-            localStorage.setItem(STORAGE_KEY, JSON.stringify(tasks));
-            await db.collection('users').doc(currentUserId).collection('tasks').doc(id).delete();
-            updateSyncStatus('Synced', true);
-        } else {
-            localStorage.setItem(STORAGE_KEY, JSON.stringify(tasks));
-        }
-    } catch (error) {
-        console.error('Error deleting task from Firestore:', error);
-        updateSyncStatus('Save failed', false);
-    }
+    saveTasks();
     render();
 }
 
@@ -345,6 +241,7 @@ $('#themeToggle').addEventListener('click', () => {
 /* ===================== MODAL MANAGEMENT ===================== */
 const modal = $('#taskModal');
 const taskForm = $('#taskForm');
+const taskModal = $('#taskModal');
 
 function openModal() {
     editingTaskId = null;
@@ -470,6 +367,7 @@ function renderWeekView() {
         const dayTasks = getTasksForDate(date);
         const scheduleBlocks = DEFAULT_SCHEDULE[dayOfWeek].blocks;
         
+        // Count completed schedule blocks
         let completedBlocks = 0;
         scheduleBlocks.forEach((block, idx) => {
             if (isScheduleItemCompleted(dateStr, idx)) completedBlocks++;
@@ -615,6 +513,7 @@ function renderDayView() {
 function render() {
     updateDateDisplay();
 
+    // Hide all views
     $$('.view').forEach(v => v.classList.remove('active'));
 
     if (currentView === 'week') {
@@ -660,178 +559,13 @@ function editTask(id) {
         
         $('#deleteBtn').style.display = 'flex';
         $('#submitBtn').textContent = 'Update Task';
-        $('#scheduleNotesSection').style.display = 'none';
         openModal();
     }
 }
 
-/* ===================== AUTHENTICATION SYSTEM ===================== */
-let isGuestModeActive = false;
-let authMode = 'login'; // 'login' or 'signup'
-
-function initAuth() {
-    if (!useFirebase || !db) {
-        // If Firebase failed to initialize, default to offline guest mode automatically
-        isGuestModeActive = true;
-        useFirebase = false;
-        $('#authModal').style.display = 'none';
-        loadTasks().then(() => render());
-        return;
-    }
-
-    const auth = firebase.auth();
-
-    // Listen for auth state changes
-    auth.onAuthStateChanged(async (user) => {
-        if (user) {
-            // User is signed in
-            currentUserId = user.uid;
-            isGuestModeActive = false;
-            useFirebase = true;
-            
-            // Extract username from virtual email
-            const username = user.email.split('@')[0];
-            $('#usernameDisplay').textContent = username;
-            $('#userProfile').style.display = 'flex';
-            $('#authModal').style.display = 'none';
-            
-            updateSyncStatus('Synced', true);
-            await loadTasks();
-            render();
-        } else {
-            // User is signed out
-            currentUserId = 'anonymous_user';
-            $('#userProfile').style.display = 'none';
-            
-            if (isGuestModeActive) {
-                // If they bypassed it with guest mode
-                useFirebase = false;
-                $('#authModal').style.display = 'none';
-                updateSyncStatus('Local Storage', false);
-                await loadTasks();
-                render();
-            } else {
-                // Show Auth modal
-                showAuthModal();
-            }
-        }
-    });
-
-    // Form submission (Login / Sign Up)
-    $('#authForm').addEventListener('submit', async (e) => {
-        e.preventDefault();
-        const username = $('#authUsername').value.trim().toLowerCase();
-        const password = $('#authPassword').value;
-        const errorEl = $('#authError');
-        
-        // Hide previous error
-        errorEl.style.display = 'none';
-        errorEl.textContent = '';
-        
-        // Programmatically translate username to virtual email
-        const email = `${username}@lifescheduler.local`;
-        
-        const submitBtn = $('#authSubmitBtn');
-        submitBtn.disabled = true;
-        submitBtn.textContent = authMode === 'login' ? 'Logging in...' : 'Signing up...';
-
-        try {
-            if (authMode === 'login') {
-                await auth.signInWithEmailAndPassword(email, password);
-            } else {
-                await auth.createUserWithEmailAndPassword(email, password);
-            }
-        } catch (error) {
-            console.error('Auth error:', error);
-            errorEl.textContent = getAuthErrorMessage(error);
-            errorEl.style.display = 'block';
-            submitBtn.disabled = false;
-            submitBtn.textContent = authMode === 'login' ? 'Log In' : 'Sign Up';
-        }
-    });
-
-    // Toggle Link (Login <-> Signup)
-    $('#authToggleLink').addEventListener('click', () => {
-        const errorEl = $('#authError');
-        errorEl.style.display = 'none';
-        
-        if (authMode === 'login') {
-            authMode = 'signup';
-            $('#authTitle').textContent = 'Sign Up';
-            $('#authSubtitle').textContent = 'Create your secure personal schedule';
-            $('#authSubmitBtn').textContent = 'Sign Up';
-            $('#authToggleText').textContent = 'Already have an account?';
-            $('#authToggleLink').textContent = 'Log In';
-        } else {
-            authMode = 'login';
-            $('#authTitle').textContent = 'Log In';
-            $('#authSubtitle').textContent = 'Access your personal Life System schedule';
-            $('#authSubmitBtn').textContent = 'Log In';
-            $('#authToggleText').textContent = "Don't have an account?";
-            $('#authToggleLink').textContent = 'Sign Up';
-        }
-    });
-
-    // Sign Out Button
-    $('#signOutBtn').addEventListener('click', async () => {
-        try {
-            isGuestModeActive = false; // Reset guest mode on active log out
-            await auth.signOut();
-        } catch (error) {
-            console.error('Error signing out:', error);
-        }
-    });
-
-    // Guest Mode Button
-    $('#authGuestBtn').addEventListener('click', async () => {
-        isGuestModeActive = true;
-        useFirebase = false;
-        $('#authModal').style.display = 'none';
-        updateSyncStatus('Local Storage', false);
-        await loadTasks();
-        render();
-    });
-}
-
-function showAuthModal() {
-    $('#authModal').style.display = 'flex';
-    $('#authForm').reset();
-    $('#authError').style.display = 'none';
-    
-    // Set default mode to login
-    authMode = 'login';
-    $('#authTitle').textContent = 'Log In';
-    $('#authSubtitle').textContent = 'Access your personal Life System schedule';
-    $('#authSubmitBtn').textContent = 'Log In';
-    $('#authToggleText').textContent = "Don't have an account?";
-    $('#authToggleLink').textContent = 'Sign Up';
-    $('#authSubmitBtn').disabled = false;
-}
-
-function getAuthErrorMessage(error) {
-    switch (error.code) {
-        case 'auth/invalid-email':
-            return 'Invalid username format. Try simple alphanumeric characters.';
-        case 'auth/user-disabled':
-            return 'This account has been disabled.';
-        case 'auth/user-not-found':
-            return 'Username not found. Create a new account by clicking "Sign Up" below!';
-        case 'auth/wrong-password':
-            return 'Incorrect password. Please try again.';
-        case 'auth/email-already-in-use':
-            return 'This username is already taken. Please choose another one.';
-        case 'auth/weak-password':
-            return 'Password is too weak. Make it at least 6 characters long.';
-        case 'auth/operation-not-allowed':
-            return 'Signing up with email/password is currently disabled in your Firebase console. Go to Auth settings and enable Email/Password!';
-        default:
-            return error.message;
-    }
-}
-
 /* ===================== INITIALIZATION ===================== */
-document.addEventListener('DOMContentLoaded', async () => {
-    await initializeFirebase();
+document.addEventListener('DOMContentLoaded', () => {
+    loadTasks();
     initTheme();
-    initAuth();
+    render();
 });

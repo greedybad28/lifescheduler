@@ -3,35 +3,18 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Daily Life System Calendar</title>
+    <title>Daily Life System Calendar (Offline)</title>
     <link rel="stylesheet" href="style.css">
-    <script src="https://www.gstatic.com/firebasejs/10.7.0/firebase-app-compat.js"></script>
-    <script src="https://www.gstatic.com/firebasejs/10.7.0/firebase-firestore-compat.js"></script>
-    <script src="https://www.gstatic.com/firebasejs/10.7.0/firebase-auth-compat.js"></script>
 </head>
 <body>
     <div class="container">
-        <!-- Loading Indicator -->
-        <div id="loadingIndicator" class="loading-indicator">
-            <div class="spinner"></div>
-            <p>Syncing with cloud...</p>
-        </div>
-
         <!-- Header -->
         <header class="header">
             <div class="header-top">
                 <h1>📅 Life System</h1>
-                <div style="display: flex; gap: 0.8rem; align-items: center; flex-wrap: wrap;">
-                    <div id="userProfile" class="user-profile" style="display: none;">
-                        <span class="user-avatar">👤</span>
-                        <span id="usernameDisplay" class="username-display"></span>
-                        <button id="signOutBtn" class="sign-out-btn">Sign Out</button>
-                    </div>
-                    <span id="syncStatus" class="sync-status">📡 Synced</span>
-                    <button class="theme-toggle" id="themeToggle">🌙</button>
-                </div>
+                <button class="theme-toggle" id="themeToggle">🌙</button>
             </div>
-            <p class="subtitle">Daily Tasks & Schedule Logger (Cloud Synced)</p>
+            <p class="subtitle">Daily Tasks & Schedule Logger</p>
         </header>
 
         <!-- Navigation -->
@@ -124,39 +107,8 @@
 
         <!-- Quick Add Button (Floating) -->
         <button id="addTaskBtn" class="fab">+</button>
-
-        <!-- Premium Auth Modal (Overlay) -->
-        <div id="authModal" class="auth-modal" style="display: none;">
-            <div class="auth-container">
-                <div class="auth-logo">📅</div>
-                <h2 id="authTitle" class="auth-title">Log In</h2>
-                <p id="authSubtitle" class="auth-subtitle">Access your personal Life System schedule</p>
-                
-                <div class="auth-error" id="authError"></div>
-                
-                <form id="authForm">
-                    <div class="auth-input-group">
-                        <label for="authUsername">Username</label>
-                        <input type="text" id="authUsername" class="auth-input" placeholder="e.g. john_doe" required autocomplete="username">
-                    </div>
-                    <div class="auth-input-group">
-                        <label for="authPassword">Password</label>
-                        <input type="password" id="authPassword" class="auth-input" placeholder="••••••••" required autocomplete="current-password">
-                    </div>
-                    <button type="submit" id="authSubmitBtn" class="auth-btn">Log In</button>
-                </form>
-                
-                <div class="auth-toggle">
-                    <span id="authToggleText">Don't have an account?</span>
-                    <a id="authToggleLink" class="auth-toggle-link">Sign Up</a>
-                </div>
-                
-                <button id="authGuestBtn" class="auth-guest-btn">Use Offline (Guest Mode)</button>
-            </div>
-        </div>
     </div>
 
-    <script src="firebase-config.js"></script>
-    <script src="script.js"></script>
+    <script src="script-local.js"></script>
 </body>
 </html>

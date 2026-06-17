@@ -1,1207 +1,275 @@
-/* ===================== FIREBASE INTEGRATION ===================== */
+/* ===================== DOM SELECTOR HELPER ===================== */
+const $ = selector => document.querySelector(selector);
+const $$ = selector => document.querySelectorAll(selector);
+
+/* ===================== STATE VARIABLES ===================== */
 let db = null;
 let currentUserId = 'anonymous_user';
 let useFirebase = false;
+let isGuestModeActive = false;
 
-// Initialize Firebase
+let tasks = []; // Array of quests: { id, category, title, completed, completedAt, notes, date }
+let questSettings = {
+    techGoals: 'Learn React, Build projects, Practice DSA',
+    techLevel: 'Beginner',
+    techFocus: 'React Fundamentals',
+    pianoGoals: 'Improve Technique, Learn classical pieces, Sight reading',
+    pianoLevel: 'Beginner',
+    pianoFocus: 'Sight Reading',
+    musicGoals: 'Learn Ableton, Improve mixing, Finish tracks',
+    musicLevel: 'Beginner',
+    musicFocus: 'Ableton Workflow'
+};
+
+let activeTab = 'dashboard';
+let activeCategory = null;
+let isGeneratingQuests = false;
+
+/* ===================== DEFAULT QUESTS FALLBACK ===================== */
+const DEFAULT_QUESTS = {
+    tech: {
+        Beginner: [
+            'Read 10 pages of a basic programming tutorial',
+            'Write a simple Hello World program in a new language',
+            'Watch an intro coding video for 20 minutes'
+        ],
+        Intermediate: [
+            'Build a simple form component with validation',
+            'Solve one LeetCode medium coding problem',
+            'Read a technical blog post about database design'
+        ],
+        Advanced: [
+            'Refactor a bottleneck function in one of your projects',
+            'Review open issues on your favorite GitHub repository',
+            'Sketch out a system architecture diagram for a new app idea'
+        ]
+    },
+    piano: {
+        Beginner: [
+            'Practice C Major scale slowly for 15 minutes',
+            'Learn the notes of the first 4 bars of a simple melody',
+            'Sight-read 5 lines of beginner sheet music'
+        ],
+        Intermediate: [
+            'Practice major and minor scales in 3 different keys',
+            'Learn 8 new bars of your current repertoire pieces',
+            'Sight-read 1 page of an intermediate piece'
+        ],
+        Advanced: [
+            'Work on a challenging section of your repertoire for 30 minutes',
+            'Improvise over a jazz chord progression for 15 minutes',
+            'Sight-read 2 pages of a complex piece'
+        ]
+    },
+    music: {
+        Beginner: [
+            'Watch a 15-minute video tutorial on your DAW interface',
+            'Create a simple 4-bar drum pattern in your DAW',
+            'Load a synthesizer preset and experiment with filter controls'
+        ],
+        Intermediate: [
+            'Recreate a drum groove from a track you enjoy',
+            'Analyze the arrangement/sections of a popular song',
+            'Balance the levels and panning of a 4-track project'
+        ],
+        Advanced: [
+            'Spend 45 minutes designing custom presets or synth patches',
+            'Apply advanced serial/parallel compression to a vocal track',
+            'Finalize the arrangement structure of a project in progress'
+        ]
+    }
+};
+
+/* ===================== MOTIVATIONAL QUOTES ===================== */
+const MOTIVATIONAL_QUOTES = [
+    { text: "Consistency is the mother of mastery.", author: "Robin Sharma" },
+    { text: "It is not what we do once in a while that shapes our lives. It's what we do consistently.", author: "Tony Robbins" },
+    { text: "The secret of your future is hidden in your daily routine.", author: "Mike Murdock" },
+    { text: "Amateurs perform when they feel like it. Professionals perform daily.", author: "Wynton Marsalis" },
+    { text: "If you don't practice, you don't deserve to win.", author: "Andre Agassi" },
+    { text: "Small daily improvements over time lead to stunning results.", author: "Robin Sharma" },
+    { text: "Continuous improvement is better than delayed perfection.", author: "Mark Twain" },
+    { text: "A journey of a thousand miles begins with a single step.", author: "Lao Tzu" },
+    { text: "It does not matter how slowly you go as long as you do not stop.", author: "Confucius" },
+    { text: "Success is the sum of small efforts, repeated day in and day out.", author: "Robert Collier" },
+    { text: "Great things are done by a series of small things brought together.", author: "Vincent van Gogh" }
+];
+
+/* ===================== FIREBASE INITIALIZATION ===================== */
 async function initializeFirebase() {
     try {
-        // Get config from firebase-config.js
         if (typeof firebaseConfig !== 'undefined' && firebaseConfig) {
-            // Initialize Firebase
             firebase.initializeApp(firebaseConfig);
             db = firebase.firestore();
             useFirebase = true;
             console.log('✅ Firebase initialized');
-            updateSyncStatus('Synced', true);
+            updateSyncBadge('Synced', true);
             return true;
         } else {
-            console.log('⚠️ Firebase config not available, using localStorage');
-            updateSyncStatus('Local Storage', false);
+            console.log('⚠️ Firebase config missing. Fallback to localStorage');
+            updateSyncBadge('Local Storage', false);
             return false;
         }
     } catch (error) {
-        console.error('Firebase init error:', error);
-        updateSyncStatus('Offline', false);
+        console.error('Firebase initialization error:', error);
+        updateSyncBadge('Offline', false);
         return false;
     }
 }
 
-function updateSyncStatus(status, synced) {
-    const statusEl = document.getElementById('syncStatus');
-    if (statusEl) {
-        statusEl.textContent = synced ? `📡 ${status}` : `⚠️ ${status}`;
-        statusEl.style.color = synced ? 'var(--success)' : 'var(--warning)';
+function updateSyncBadge(status, synced) {
+    const badge = $('#syncStatus');
+    if (badge) {
+        badge.textContent = synced ? `📡 ${status}` : `⚠️ ${status}`;
+        badge.style.color = synced ? 'var(--success)' : 'var(--warning)';
+    }
+    const label = $('#syncStatusLabel');
+    if (label) {
+        label.textContent = synced ? `Cloud Sync Active (${currentUserId.substring(0,6)}...)` : 'Guest Mode (Offline)';
+        label.style.color = synced ? 'var(--success)' : 'var(--warning)';
     }
 }
 
-/* ===================== STORAGE & UTILITIES ===================== */
-const STORAGE_KEY = 'lifesystem_tasks';
-const SCHEDULE_STATUS_KEY = 'lifesystem_schedule_status';
-const SCHEDULE_NOTES_KEY = 'lifesystem_schedule_notes';
-
-// Default weekly schedule (User's healthy routine inspiration)
-const DEFAULT_SCHEDULE = {
-    0: { // Sunday
-        blocks: [
-            { time: '6:00 AM - 8:00 AM', title: 'Sleep In', description: 'No alarm, sleep at your pace' },
-            { time: '8:00 AM - 10:00 AM', title: 'Morning at your pace', description: 'Relax, no rush' },
-            { time: '10:00 AM - 1:00 PM', title: 'Family / Walk / Read', description: 'Fully offline' },
-            { time: '1:00 PM - 3:00 PM', title: 'Light Music / Journaling', description: 'Optional' },
-            { time: '3:00 PM - 3:30 PM', title: 'Weekly Planning', description: 'Prep for the week (30 min max)' },
-            { time: '5:00 PM - 6:00 PM', title: 'Dinner / Family', description: '' },
-            { time: '9:00 PM', title: 'Sleep (Earlier)', description: '3:30 AM comes fast' }
-        ],
-        rest: true
-    },
-    1: { // Monday
-        blocks: [
-            { time: '3:30 AM', title: 'Wake-up Ritual', description: 'Water, wash face, light food, no doomscrolling' },
-            { time: '9:00 AM - 11:00 AM', title: 'Internship', description: '[2 hrs]' },
-            { time: '11:00 AM - 1:00 PM', title: 'Recovery / Human Time', description: 'Eat, read, family, relax, power nap OK (20 min)' },
-            { time: '1:00 PM - 5:00 PM', title: 'Music Production', description: 'Tutorials, DAW, workflow, sound design' },
-            { time: '5:00 PM - 7:00 PM', title: 'Gym', description: 'Energy + consistency' },
-            { time: '7:00 PM - 8:00 PM', title: 'Dinner / Reset / Relax', description: '' },
-            { time: '8:00 PM - 9:00 PM', title: 'Daily Music Production Hour', description: 'Create every day, no perfection pressure' },
-            { time: '9:00 PM', title: 'Wind-down → Sleep', description: 'Protect aggressively' }
-        ]
-    },
-    2: { // Tuesday
-        blocks: [
-            { time: '3:30 AM', title: 'Wake-up Ritual', description: 'Water, wash face, light food, no doomscrolling' },
-            { time: '9:00 AM - 11:00 AM', title: 'Internship', description: '[2 hrs]' },
-            { time: '11:00 AM - 1:00 PM', title: 'Recovery / Human Time', description: 'Eat, read, family, relax, power nap OK' },
-            { time: '1:00 PM - 5:00 PM', title: 'Coding Day', description: 'React, projects, DSA, portfolio' },
-            { time: '5:00 PM - 7:00 PM', title: 'Gym', description: 'Energy + consistency' },
-            { time: '7:00 PM - 8:00 PM', title: 'Dinner / Reset / Relax', description: '' },
-            { time: '8:00 PM - 9:00 PM', title: 'Daily Music Production Hour', description: 'Create every day' },
-            { time: '9:00 PM', title: 'Wind-down → Sleep', description: '' }
-        ]
-    },
-    3: { // Wednesday
-        blocks: [
-            { time: '3:30 AM', title: 'Wake-up Ritual', description: 'Water, wash face, light food, no doomscrolling' },
-            { time: '9:00 AM - 11:00 AM', title: 'Internship', description: '[2 hrs]' },
-            { time: '11:00 AM - 1:00 PM', title: 'Recovery / Human Time', description: 'Eat, read, family, relax' },
-            { time: '1:00 PM - 5:00 PM', title: 'Piano Day', description: 'Practice, jazz, improv, pieces' },
-            { time: '5:00 PM - 7:00 PM', title: 'Free Time / Buffer / Rest', description: '' },
-            { time: '7:00 PM - 8:00 PM', title: 'Dinner / Reset / Relax', description: '' },
-            { time: '8:00 PM - 9:00 PM', title: 'Daily Music Production Hour', description: 'Create every day' },
-            { time: '9:00 PM', title: 'Wind-down → Sleep', description: '' }
-        ]
-    },
-    4: { // Thursday
-        blocks: [
-            { time: '3:30 AM', title: 'Wake-up Ritual', description: 'Water, wash face, light food, no doomscrolling' },
-            { time: '9:00 AM - 11:00 AM', title: 'Internship', description: '[2 hrs]' },
-            { time: '11:00 AM - 1:00 PM', title: 'Recovery / Human Time', description: 'Eat, read, family, relax' },
-            { time: '1:00 PM - 5:00 PM', title: 'Music Production (Apply)', description: 'Experiment, apply Monday concepts' },
-            { time: '5:00 PM - 7:00 PM', title: 'Gym', description: 'Energy + consistency' },
-            { time: '7:00 PM - 8:00 PM', title: 'Dinner / Reset / Relax', description: '' },
-            { time: '8:00 PM - 9:00 PM', title: 'Daily Music Production Hour', description: 'Create every day' },
-            { time: '9:00 PM', title: 'Wind-down → Sleep', description: '' }
-        ]
-    },
-    5: { // Friday
-        blocks: [
-            { time: '3:30 AM', title: 'Wake-up Ritual', description: 'Water, wash face, light food, no doomscrolling' },
-            { time: '9:00 AM - 11:00 AM', title: 'Internship', description: '[2 hrs]' },
-            { time: '11:00 AM - 1:00 PM', title: 'Recovery / Human Time', description: 'Eat, read, family, relax' },
-            { time: '1:00 PM - 5:00 PM', title: 'Deep Coding Day', description: 'Build, push — end with 20 min free listening' },
-            { time: '5:00 PM - 7:00 PM', title: 'Gym', description: 'Energy + consistency' },
-            { time: '7:00 PM - 8:00 PM', title: 'Dinner / Reset / Relax', description: '' },
-            { time: '8:00 PM - 9:00 PM', title: 'Daily Music Production Hour', description: 'Create every day' },
-            { time: '9:00 PM', title: 'Wind-down → Sleep', description: '' }
-        ]
-    },
-    6: { // Saturday
-        blocks: [
-            { time: '3:30 AM', title: 'Wake-up Ritual', description: 'Water, wash face, light food, no doomscrolling' },
-            { time: '9:00 AM - 11:00 AM', title: 'Internship', description: '[2 hrs]' },
-            { time: '11:00 AM - 1:00 PM', title: 'Recovery / Human Time', description: 'Eat, read, family, relax' },
-            { time: '1:00 PM - 5:00 PM', title: 'Piano + Light Work Day', description: 'Lighter schedule — extra classes' },
-            { time: '5:00 PM - 7:00 PM', title: 'Free Time / Buffer / Rest', description: '' },
-            { time: '7:00 PM - 8:00 PM', title: 'Dinner / Reset / Relax', description: '' },
-            { time: '8:00 PM - 9:00 PM', title: 'Daily Music Production Hour', description: 'Create every day' },
-            { time: '9:00 PM', title: 'Wind-down → Sleep', description: '' }
-        ]
-    }
-};
-
-const CATEGORY_COLORS = {
-    'teaching': '#667eea',
-    'internship': '#764ba2',
-    'music-prod': '#f6ad55',
-    'coding': '#48bb78',
-    'piano': '#f56565',
-    'gym': '#06b6d4',
-    'personal': '#ec4899',
-    'other': '#6b7280'
-};
-
-const DAY_NAMES = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
-
-const MOTIVATIONAL_QUOTES = [
-    { text: "He who has a why to live for can bear almost any how.", author: "Friedrich Nietzsche" },
-    { text: "Protect your morning. Protect your wind-down. Consistency is the ultimate power multiplier.", author: "Habit Rituals" },
-    { text: "The secret of change is to focus all of your energy, not on fighting the old, but on building the new.", author: "Socrates" },
-    { text: "We are what we repeatedly do. Excellence, then, is not an act, but a habit.", author: "Aristotle" },
-    { text: "It is not that we have a short time to live, but that we waste a lot of it.", author: "Seneca" },
-    { text: "If you don't build your dream, someone else will hire you to help them build theirs.", author: "Dhirubhai Ambani" },
-    { text: "The code you write today shapes the reality of tomorrow. Keep creating.", author: "Developer Code" },
-    { text: "Without music, life would be a mistake. Go make your masterpiece today.", author: "Friedrich Nietzsche" },
-    { text: "Your energy is your currency. Spend it on things that elevate you, like focus, creation, and sweat.", author: "Life System" },
-    { text: "Discipline is choosing between what you want now and what you want most.", author: "Abraham Lincoln" }
-];
-
-/* ===================== STATE MANAGEMENT ===================== */
-let currentDate = new Date();
-let tasks = [];
-let scheduleStatus = {};
-let scheduleNotes = {};
-let currentView = 'day'; // DEFAULT ACTIVE FIRST PAGE IS DAY VIEW
-let isDarkMode = localStorage.getItem('darkMode') === 'true';
-let editingTaskId = null;
-let editingScheduleBlock = null;
-
-// User custom weekly schedule
-let weeklySchedule = JSON.parse(JSON.stringify(DEFAULT_SCHEDULE));
-let editingTemplateBlockIdx = null;
-
-// Load data from Firestore or localStorage
-async function loadTasks() {
+/* ===================== PERSISTENCE OPERATIONS ===================== */
+async function loadData() {
+    toggleLoading(true);
     try {
         if (useFirebase && db) {
-            updateSyncStatus('Loading...', false);
-            
-            // Load tasks
+            // 1. Load Quests (Legacy Tasks collection)
             const tasksSnapshot = await db.collection('users').doc(currentUserId).collection('tasks').get();
             tasks = tasksSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
 
-            // Load schedule status
-            const statusDoc = await db.collection('users').doc(currentUserId).collection('data').doc('scheduleStatus').get();
-            scheduleStatus = statusDoc.exists ? statusDoc.data() : {};
-
-            // Load schedule notes
-            const notesDoc = await db.collection('users').doc(currentUserId).collection('data').doc('scheduleNotes').get();
-            scheduleNotes = notesDoc.exists ? notesDoc.data() : {};
-
-            // Load weekly template
-            const templateDoc = await db.collection('users').doc(currentUserId).collection('data').doc('scheduleTemplate').get();
-            if (templateDoc.exists) {
-                weeklySchedule = templateDoc.data().template;
+            // 2. Load Quest Settings
+            const settingsDoc = await db.collection('users').doc(currentUserId).collection('data').doc('questSettings').get();
+            if (settingsDoc.exists) {
+                questSettings = { ...questSettings, ...settingsDoc.data() };
             } else {
-                // Brand new user detected! Show onboarding choice modal
-                showOnboardingModal();
+                // First-time user: prompt settings setup
+                showOnboarding();
             }
-
-            updateSyncStatus('Synced', true);
+            updateSyncBadge('Synced', true);
         } else {
-            // Fallback to localStorage
-            const stored = localStorage.getItem(STORAGE_KEY);
-            tasks = stored ? JSON.parse(stored) : [];
+            // Load LocalStorage Fallback
+            const storedTasks = localStorage.getItem('lifesystem_quests');
+            tasks = storedTasks ? JSON.parse(storedTasks) : [];
             
-            const statusStored = localStorage.getItem(SCHEDULE_STATUS_KEY);
-            scheduleStatus = statusStored ? JSON.parse(statusStored) : {};
-            
-            const notesStored = localStorage.getItem(SCHEDULE_NOTES_KEY);
-            scheduleNotes = notesStored ? JSON.parse(notesStored) : {};
-
-            const templateStored = localStorage.getItem('lifesystem_schedule_template');
-            if (templateStored) {
-                weeklySchedule = JSON.parse(templateStored);
+            const storedSettings = localStorage.getItem('lifesystem_quest_settings');
+            if (storedSettings) {
+                questSettings = { ...questSettings, ...JSON.parse(storedSettings) };
+            } else {
+                showOnboarding();
             }
+            updateSyncBadge('Local Storage', false);
         }
+
+        // Apply loaded settings to form controls
+        populateSettingsFields();
+
+        // Check date and auto-generate today's quests if needed
+        await checkDailyQuestReset();
+
     } catch (error) {
-        console.error('Error loading tasks:', error);
-        updateSyncStatus('Offline', false);
-    }
-}
-
-// Save tasks
-async function saveTasks() {
-    try {
-        if (useFirebase && db) {
-            updateSyncStatus('Saving...', false);
-            localStorage.setItem(STORAGE_KEY, JSON.stringify(tasks));
-            await Promise.all(tasks.map(task => {
-                const { id, ...data } = task;
-                return db.collection('users').doc(currentUserId).collection('tasks').doc(id).set(data, { merge: true });
-            }));
-            updateSyncStatus('Synced', true);
-        } else {
-            localStorage.setItem(STORAGE_KEY, JSON.stringify(tasks));
-        }
-    } catch (error) {
-        console.error('Error saving tasks:', error);
-        updateSyncStatus('Save failed', false);
-    }
-}
-
-// Save schedule status
-async function saveScheduleStatus() {
-    try {
-        if (useFirebase && db) {
-            await db.collection('users').doc(currentUserId).collection('data').doc('scheduleStatus').set(scheduleStatus);
-        } else {
-            localStorage.setItem(SCHEDULE_STATUS_KEY, JSON.stringify(scheduleStatus));
-        }
-    } catch (error) {
-        console.error('Error saving status:', error);
-    }
-}
-
-// Save schedule notes
-async function saveScheduleNotes() {
-    try {
-        if (useFirebase && db) {
-            await db.collection('users').doc(currentUserId).collection('data').doc('scheduleNotes').set(scheduleNotes);
-        } else {
-            localStorage.setItem(SCHEDULE_NOTES_KEY, JSON.stringify(scheduleNotes));
-        }
-    } catch (error) {
-        console.error('Error saving notes:', error);
-    }
-}
-
-// Save dynamic weekly schedule
-async function saveWeeklySchedule() {
-    try {
-        if (useFirebase && db) {
-            await db.collection('users').doc(currentUserId).collection('data').doc('scheduleTemplate').set({ template: weeklySchedule });
-        } else {
-            localStorage.setItem('lifesystem_schedule_template', JSON.stringify(weeklySchedule));
-        }
-    } catch (error) {
-        console.error('Error saving template:', error);
-    }
-}
-
-// Add new task
-function addTask(task) {
-    task.id = Date.now().toString();
-    task.createdAt = new Date().toISOString();
-    tasks.push(task);
-    saveTasks();
-    render();
-}
-
-// Update task
-function updateTask(id, updates) {
-    const task = tasks.find(t => t.id === id);
-    if (task) {
-        Object.assign(task, updates);
-        saveTasks();
-        render();
-    }
-}
-
-// Delete task
-async function deleteTask(id) {
-    tasks = tasks.filter(t => t.id !== id);
-    try {
-        if (useFirebase && db) {
-            updateSyncStatus('Saving...', false);
-            localStorage.setItem(STORAGE_KEY, JSON.stringify(tasks));
-            await db.collection('users').doc(currentUserId).collection('tasks').doc(id).delete();
-            updateSyncStatus('Synced', true);
-        } else {
-            localStorage.setItem(STORAGE_KEY, JSON.stringify(tasks));
-        }
-    } catch (error) {
-        console.error('Error deleting task from Firestore:', error);
-        updateSyncStatus('Save failed', false);
-    }
-    render();
-}
-
-// Toggle schedule item completion
-function toggleScheduleItem(dateStr, blockIndex, statusToSet) {
-    const key = `${dateStr}_${blockIndex}`;
-    
-    // Support legacy binary toggle if statusToSet is not provided
-    if (!statusToSet) {
-        scheduleStatus[key] = !scheduleStatus[key];
-    } else {
-        if (scheduleStatus[key] === statusToSet) {
-            scheduleStatus[key] = 'pending'; // revert to pending
-        } else {
-            scheduleStatus[key] = statusToSet;
-        }
-    }
-    
-    saveScheduleStatus();
-    render();
-}
-
-// Check if schedule item is completed
-function isScheduleItemCompleted(dateStr, blockIndex) {
-    const key = `${dateStr}_${blockIndex}`;
-    return scheduleStatus[key] === 'completed' || scheduleStatus[key] === true;
-}
-
-// Check if schedule item is failed / Not Done
-function isScheduleItemFailed(dateStr, blockIndex) {
-    const key = `${dateStr}_${blockIndex}`;
-    return scheduleStatus[key] === 'failed';
-}
-
-// Get schedule notes
-function getScheduleNotes(dateStr, blockIndex) {
-    const key = `${dateStr}_${blockIndex}`;
-    return scheduleNotes[key] || '';
-}
-
-// Set schedule notes
-function setScheduleNotes(dateStr, blockIndex, notes) {
-    const key = `${dateStr}_${blockIndex}`;
-    scheduleNotes[key] = notes;
-    saveScheduleNotes();
-}
-
-// Get tasks for specific date
-function getTasksForDate(date) {
-    const dateStr = date.toISOString().split('T')[0];
-    return tasks.filter(t => t.date === dateStr).sort((a, b) => a.time.localeCompare(b.time));
-}
-
-// Get week start (Monday)
-function getWeekStart(date) {
-    const d = new Date(date);
-    const day = d.getDay();
-    const diff = d.getDate() - day + (day === 0 ? -6 : 1);
-    return new Date(d.setDate(diff));
-}
-
-// Format date
-function formatDate(date) {
-    return date.toISOString().split('T')[0];
-}
-
-// Format date display
-function formatDateDisplay(date) {
-    const options = { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' };
-    return date.toLocaleDateString('en-US', options);
-}
-
-/* ===================== DOM HELPERS ===================== */
-const $ = (selector) => document.querySelector(selector);
-const $$ = (selector) => document.querySelectorAll(selector);
-
-/* ===================== THEME TOGGLE ===================== */
-function initTheme() {
-    if (isDarkMode) {
-        document.body.classList.add('dark-mode');
-        $('#themeToggle').textContent = '☀️';
-    }
-}
-
-$('#themeToggle').addEventListener('click', () => {
-    isDarkMode = !isDarkMode;
-    localStorage.setItem('darkMode', isDarkMode);
-    document.body.classList.toggle('dark-mode');
-    $('#themeToggle').textContent = isDarkMode ? '☀️' : '🌙';
-});
-
-/* ===================== DAILY MOTIVATION POPUP SYSTEM ===================== */
-function checkDailyQuote() {
-    const todayStr = new Date().toDateString();
-    const lastQuoteDate = localStorage.getItem('lifesystem_last_quote_date');
-    
-    if (lastQuoteDate !== todayStr) {
-        // Pick a random motivational quote
-        const randomIndex = Math.floor(Math.random() * MOTIVATIONAL_QUOTES.length);
-        const quote = MOTIVATIONAL_QUOTES[randomIndex];
-        
-        // Render inside quoteModal DOM elements
-        $('#quoteText').textContent = `"${quote.text}"`;
-        $('#quoteAuthor').textContent = `— ${quote.author}`;
-        $('#quoteModal').style.display = 'flex';
-        
-        // Save today's date so it registers only once per day
-        localStorage.setItem('lifesystem_last_quote_date', todayStr);
-    }
-}
-
-$('#closeQuoteBtn').addEventListener('click', () => {
-    $('#quoteModal').style.display = 'none';
-});
-
-$('#quoteAcknowledgeBtn').addEventListener('click', () => {
-    $('#quoteModal').style.display = 'none';
-});
-
-/* ===================== MODAL MANAGEMENT ===================== */
-const modal = $('#taskModal');
-const taskForm = $('#taskForm');
-
-function openModal() {
-    editingTaskId = null;
-    editingScheduleBlock = null;
-    const today = formatDate(new Date());
-    $('#taskDate').value = today;
-    $('#taskTime').value = '12:00';
-    taskForm.reset();
-    $('#deleteBtn').style.display = 'none';
-    $('#submitBtn').textContent = 'Add Task';
-    $('#scheduleNotesSection').style.display = 'none';
-    modal.classList.add('active');
-}
-
-function openScheduleBlockEditor(dateStr, blockIndex) {
-    editingScheduleBlock = { dateStr, blockIndex };
-    editingTaskId = null;
-    const notes = getScheduleNotes(dateStr, blockIndex);
-    $('#scheduleBlockNotes').value = notes;
-    $('#scheduleNotesSection').style.display = 'block';
-    $('#taskDate').value = dateStr;
-    taskForm.reset();
-    $('#submitBtn').textContent = 'Save Notes';
-    $('#deleteBtn').style.display = 'none';
-    $('#scheduleBlockNotes').value = notes;
-    modal.classList.add('active');
-}
-
-function closeModal() {
-    modal.classList.remove('active');
-    taskForm.reset();
-    editingTaskId = null;
-    editingScheduleBlock = null;
-}
-
-$('.close-btn').addEventListener('click', closeModal);
-$('#cancelBtn').addEventListener('click', closeModal);
-$('#addTaskBtn').addEventListener('click', openModal);
-
-modal.addEventListener('click', (e) => {
-    if (e.target === modal) closeModal();
-});
-
-taskForm.addEventListener('submit', (e) => {
-    e.preventDefault();
-    
-    if (editingScheduleBlock) {
-        const { dateStr, blockIndex } = editingScheduleBlock;
-        const notes = $('#scheduleBlockNotes').value;
-        setScheduleNotes(dateStr, blockIndex, notes);
-        closeModal();
-    } else {
-        const task = {
-            date: $('#taskDate').value,
-            time: $('#taskTime').value,
-            title: $('#taskTitle').value,
-            category: $('#taskCategory').value,
-            status: $('#taskStatus').value,
-            notes: $('#taskNotes').value
-        };
-        
-        if (editingTaskId) {
-            updateTask(editingTaskId, task);
-        } else {
-            addTask(task);
-        }
-        closeModal();
-    }
-});
-
-$('#deleteBtn').addEventListener('click', () => {
-    if (editingTaskId && confirm('Delete this task?')) {
-        deleteTask(editingTaskId);
-        closeModal();
-    }
-});
-
-/* ===================== DATE NAVIGATION ===================== */
-function updateDateDisplay() {
-    if (currentView === 'analytics') {
-        const activeYear = currentDate.getFullYear();
-        const monthName = currentDate.toLocaleString('en-US', { month: 'long' });
-        $('#currentDate').textContent = `📈 ${monthName} ${activeYear}`;
-        return;
-    }
-
-    if (currentView === 'day') {
-        $('#currentDate').textContent = formatDateDisplay(currentDate);
-        return;
-    }
-
-    const weekStart = getWeekStart(currentDate);
-    const weekEnd = new Date(weekStart);
-    weekEnd.setDate(weekEnd.getDate() + 6);
-    $('#currentDate').textContent = `${formatDateDisplay(weekStart)} → ${formatDateDisplay(weekEnd)}`;
-}
-
-$('#prevWeek').addEventListener('click', () => {
-    if (currentView === 'analytics') {
-        adjustMonth(-1);
-    } else if (currentView === 'day') {
-        currentDate.setDate(currentDate.getDate() - 1);
-        render();
-    } else {
-        currentDate.setDate(currentDate.getDate() - 7);
-        render();
-    }
-});
-
-$('#nextWeek').addEventListener('click', () => {
-    if (currentView === 'analytics') {
-        adjustMonth(1);
-    } else if (currentView === 'day') {
-        currentDate.setDate(currentDate.getDate() + 1);
-        render();
-    } else {
-        currentDate.setDate(currentDate.getDate() + 7);
-        render();
-    }
-});
-
-$('#todayBtn').addEventListener('click', () => {
-    currentDate = new Date();
-    render();
-});
-
-/* ===================== VIEW MANAGEMENT ===================== */
-$$('.view-btn').forEach(btn => {
-    btn.addEventListener('click', (e) => {
-        if (e.target.id === 'editTemplateBtn') return; // Bypass layout selection logic
-        $$('.view-btn').forEach(b => b.classList.remove('active'));
-        e.target.classList.add('active');
-        currentView = e.target.dataset.view;
-        render();
-    });
-});
-
-/* ===================== TASK QUICK TOGGLES ===================== */
-window.toggleTaskStatus = function(id, statusToSet) {
-    const task = tasks.find(t => t.id === id);
-    if (task) {
-        const newStatus = task.status === statusToSet ? 'pending' : statusToSet;
-        updateTask(id, { status: newStatus });
-    }
-};
-
-/* ===================== RENDERING ===================== */
-function renderWeekView() {
-    const weekStart = getWeekStart(currentDate);
-    let html = '';
-
-    for (let i = 0; i < 7; i++) {
-        const date = new Date(weekStart);
-        date.setDate(date.getDate() + i);
-        const dateStr = formatDate(date);
-        const dayOfWeek = date.getDay();
-        const dayName = DAY_NAMES[dayOfWeek];
-        const isToday = formatDate(new Date()) === dateStr;
-        const dayTasks = getTasksForDate(date);
-        
-        const dayData = weeklySchedule[dayOfWeek] || { blocks: [] };
-        const scheduleBlocks = dayData.blocks;
-        
-        let completedBlocks = 0;
-        scheduleBlocks.forEach((block, idx) => {
-            if (isScheduleItemCompleted(dateStr, idx)) completedBlocks++;
-        });
-
-        html += `
-            <div class="day-card ${isToday ? 'today' : ''}" onclick="openDayView('${dateStr}')">
-                <div class="day-header">
-                    <div>
-                        <div class="day-name">${dayName}</div>
-                        <div class="day-date">${date.getDate()} ${date.toLocaleString('en-US', { month: 'short' })}</div>
-                    </div>
-                    <div style="text-align: right;">
-                        ${dayTasks.length > 0 ? `<span class="day-badge">${dayTasks.length} tasks</span>` : ''}
-                        ${scheduleBlocks.length > 0 ? `<span class="day-badge" style="background: var(--accent); margin-top: 0.3rem; display: block;">✓ ${completedBlocks}/${scheduleBlocks.length}</span>` : ''}
-                    </div>
-                </div>
-                <div class="tasks-list">
-                    ${scheduleBlocks.length > 0 ? `
-                        <div style="margin-bottom: 1rem; padding-bottom: 1rem; border-bottom: 1px solid var(--border);">
-                            <div style="font-size: 0.8rem; font-weight: 600; color: var(--text-light); margin-bottom: 0.5rem;">Schedule:</div>
-                            ${scheduleBlocks.map((block, idx) => {
-                                const isCompleted = isScheduleItemCompleted(dateStr, idx);
-                                const isFailed = isScheduleItemFailed(dateStr, idx);
-                                return `
-                                    <div class="schedule-check-item ${isCompleted ? 'completed' : ''} ${isFailed ? 'failed' : ''}" onclick="event.stopPropagation()">
-                                        <div style="display: flex; align-items: center; justify-content: space-between; width: 100%; gap: 0.2rem;">
-                                            <div style="display: flex; align-items: center; gap: 0.3rem; min-width: 0; flex: 1;">
-                                                <span class="check-time" style="font-size: 0.75rem; color: var(--text-light); font-weight: 600; flex-shrink: 0;">${block.time.split(' - ')[0]}</span>
-                                                <span class="check-title" style="font-weight: 600; font-size: 0.85rem; text-decoration: ${isCompleted || isFailed ? 'line-through' : 'none'}; color: ${isFailed ? 'var(--danger)' : (isCompleted ? 'var(--success)' : 'inherit')}; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">${block.title}</span>
-                                            </div>
-                                            <div style="display: flex; gap: 0.15rem; flex-shrink: 0;">
-                                                <button class="task-btn check" style="padding: 0.1rem 0.2rem; font-size: 0.75rem; border-radius: 4px; background: ${isCompleted ? 'var(--success)' : 'transparent'}; color: ${isCompleted ? 'white' : 'inherit'}; border: 1px solid ${isCompleted ? 'var(--success)' : 'var(--border)'};" onclick="toggleScheduleItem('${dateStr}', ${idx}, 'completed')">✔️</button>
-                                                <button class="task-btn cross" style="padding: 0.1rem 0.2rem; font-size: 0.75rem; border-radius: 4px; background: ${isFailed ? 'var(--danger)' : 'transparent'}; color: ${isFailed ? 'white' : 'inherit'}; border: 1px solid ${isFailed ? 'var(--danger)' : 'var(--border)'};" onclick="toggleScheduleItem('${dateStr}', ${idx}, 'failed')">❌</button>
-                                            </div>
-                                        </div>
-                                    </div>
-                                `;
-                            }).join('')}
-                        </div>
-                    ` : ''}
-                    ${dayTasks.length > 0 ? `
-                        <div style="font-size: 0.8rem; font-weight: 600; color: var(--text-light); margin-bottom: 0.5rem;">Custom Tasks:</div>
-                        ${dayTasks.map(task => `
-                            <div class="task-item ${task.status}" onclick="event.stopPropagation()">
-                                <div class="task-content">
-                                    <div class="task-time">${task.time}</div>
-                                    <div class="task-title">${task.title}</div>
-                                    <div style="display: flex; align-items: center; flex-wrap: wrap; gap: 0.25rem; margin-top: 0.3rem;">
-                                        <span class="task-category" style="background-color: ${CATEGORY_COLORS[task.category] || 'var(--primary)'}; margin-top: 0; padding: 0.1rem 0.4rem; font-size: 0.65rem;">${task.category}</span>
-                                        <span class="task-status-badge ${task.status}" style="margin-top: 0; padding: 0.1rem 0.4rem; font-size: 0.65rem; font-weight: 700; border-radius: 4px; text-transform: uppercase; ${
-                                            task.status === 'completed' ? 'background: rgba(72,187,120,0.15); color: var(--success);' :
-                                            task.status === 'failed' ? 'background: rgba(245,101,101,0.15); color: var(--danger);' :
-                                            task.status === 'in-progress' ? 'background: rgba(246,173,85,0.15); color: var(--warning);' :
-                                            'background: rgba(113,128,150,0.15); color: var(--text-light);'
-                                        }">${task.status === 'failed' ? 'Not Done' : task.status === 'completed' ? 'Completed' : task.status === 'in-progress' ? 'In Progress' : 'Pending'}</span>
-                                    </div>
-                                </div>
-                                <div class="task-actions" style="align-items: center; gap: 0.25rem;">
-                                    <button class="task-btn check" style="background: ${task.status === 'completed' ? 'var(--success)' : 'transparent'}; color: ${task.status === 'completed' ? 'white' : 'inherit'}; border-color: ${task.status === 'completed' ? 'var(--success)' : 'var(--border)'};" onclick="toggleTaskStatus('${task.id}', 'completed')">✔️</button>
-                                    <button class="task-btn cross" style="background: ${task.status === 'failed' ? 'var(--danger)' : 'transparent'}; color: ${task.status === 'failed' ? 'white' : 'inherit'}; border-color: ${task.status === 'failed' ? 'var(--danger)' : 'var(--border)'};" onclick="toggleTaskStatus('${task.id}', 'failed')">❌</button>
-                                    <button class="task-btn edit" onclick="editTask('${task.id}')">✏️</button>
-                                    <button class="task-btn delete" onclick="deleteTaskAndRender('${task.id}')">🗑️</button>
-                                </div>
-                            </div>
-                        `).join('')}
-                    ` : (scheduleBlocks.length === 0 ? `<div class="empty-state"><p>No schedule or tasks</p></div>` : '')}
-                </div>
-            </div>
-        `;
-    }
-
-    $('#weekGrid').innerHTML = html;
-}
-
-function renderDayView() {
-    const dateStr = formatDate(currentDate);
-    const date = new Date(dateStr);
-    const dayOfWeek = date.getDay();
-    const dayName = DAY_NAMES[dayOfWeek];
-    const dayTasks = getTasksForDate(date);
-    
-    const dayData = weeklySchedule[dayOfWeek] || { blocks: [] };
-    const scheduleBlocks = dayData.blocks;
-
-    let html = `
-        <div class="day-detail-header">
-            <div>
-                <h2>${dayName}</h2>
-                <p style="color: var(--text-light); margin-top: 0.3rem;">${formatDateDisplay(date)}</p>
-            </div>
-            <button class="nav-btn" onclick="switchToWeekView()">← Week View</button>
-        </div>
-        <div class="schedule-blocks">
-            ${scheduleBlocks.map((block, idx) => {
-                const isCompleted = isScheduleItemCompleted(dateStr, idx);
-                const isFailed = isScheduleItemFailed(dateStr, idx);
-                const taskInBlock = dayTasks.filter(t => {
-                    const [startTime] = block.time.split(' - ');
-                    return t.time.includes(startTime.trim());
-                });
-
-                return `
-                    <div class="schedule-block ${isCompleted ? 'completed' : ''} ${isFailed ? 'failed' : ''}">
-                        <div style="display: flex; align-items: center; gap: 0.8rem;">
-                            <div class="task-actions" style="align-items: center; gap: 0.2rem; flex-shrink: 0; display: flex; flex-direction: column;">
-                                <button class="task-btn check" style="width: 26px; height: 26px; font-size: 0.85rem; border-radius: 6px; background: ${isCompleted ? 'var(--success)' : 'transparent'}; color: ${isCompleted ? 'white' : 'inherit'}; border: 1px solid ${isCompleted ? 'var(--success)' : 'var(--border)'};" onclick="toggleScheduleItem('${dateStr}', ${idx}, 'completed')">✔️</button>
-                                <button class="task-btn cross" style="width: 26px; height: 26px; font-size: 0.85rem; border-radius: 6px; background: ${isFailed ? 'var(--danger)' : 'transparent'}; color: ${isFailed ? 'white' : 'inherit'}; border: 1px solid ${isFailed ? 'var(--danger)' : 'var(--border)'};" onclick="toggleScheduleItem('${dateStr}', ${idx}, 'failed')">❌</button>
-                            </div>
-                            <div style="flex: 1; min-width: 0;">
-                                <div class="schedule-time" style="color: ${isFailed ? 'var(--danger)' : (isCompleted ? 'var(--success)' : 'var(--primary)')}; font-weight: 700;">⏰ ${block.time}</div>
-                                <div class="schedule-title" style="text-decoration: ${isCompleted || isFailed ? 'line-through' : 'none'}; color: ${isFailed ? 'var(--text-light)' : 'inherit'}; font-weight: 700; font-size: 1.1rem; margin-top: 0.1rem;">${block.title}</div>
-                                <div class="schedule-desc" style="color: var(--text-light); font-size: 0.9rem; margin-top: 0.2rem;">${block.description}</div>
-                                ${getScheduleNotes(dateStr, idx) ? `<div style="margin-top: 0.8rem; padding: 0.8rem; background: rgba(72, 187, 120, 0.1); border-radius: 6px; border-left: 3px solid var(--success); font-size: 0.9rem; color: var(--text-light);">📝 ${getScheduleNotes(dateStr, idx)}</div>` : ''}
-                            </div>
-                            <button class="task-btn edit" style="margin-left: 0.5rem; align-self: flex-start; margin-top: 0.2rem;" onclick="openScheduleBlockEditor('${dateStr}', ${idx})">✏️</button>
-                        </div>
-                        ${taskInBlock.length > 0 ? `
-                            <div class="tasks-list" style="margin-top: 1rem; border-top: 1px solid var(--border); padding-top: 1rem;">
-                                ${taskInBlock.map(task => `
-                                    <div class="task-item ${task.status}">
-                                        <div class="task-content">
-                                            <div class="task-title" style="font-weight: 600;">${task.title}</div>
-                                            <div style="display: flex; align-items: center; flex-wrap: wrap; gap: 0.25rem; margin-top: 0.3rem;">
-                                                <span class="task-category" style="background-color: ${CATEGORY_COLORS[task.category] || 'var(--primary)'}; margin-top: 0; padding: 0.1rem 0.4rem; font-size: 0.65rem;">${task.category}</span>
-                                                <span class="task-status-badge ${task.status}" style="margin-top: 0; padding: 0.1rem 0.4rem; font-size: 0.65rem; font-weight: 700; border-radius: 4px; text-transform: uppercase; ${
-                                                    task.status === 'completed' ? 'background: rgba(72,187,120,0.15); color: var(--success);' :
-                                                    task.status === 'failed' ? 'background: rgba(245,101,101,0.15); color: var(--danger);' :
-                                                    task.status === 'in-progress' ? 'background: rgba(246,173,85,0.15); color: var(--warning);' :
-                                                    'background: rgba(113,128,150,0.15); color: var(--text-light);'
-                                                }">${task.status === 'failed' ? 'Not Done' : task.status === 'completed' ? 'Completed' : task.status === 'in-progress' ? 'In Progress' : 'Pending'}</span>
-                                            </div>
-                                            ${task.notes ? `<p style="font-size: 0.85rem; color: var(--text-light); margin-top: 0.3rem;">${task.notes}</p>` : ''}
-                                        </div>
-                                        <div class="task-actions" style="align-items: center; gap: 0.25rem;">
-                                            <button class="task-btn check" style="background: ${task.status === 'completed' ? 'var(--success)' : 'transparent'}; color: ${task.status === 'completed' ? 'white' : 'inherit'}; border-color: ${task.status === 'completed' ? 'var(--success)' : 'var(--border)'};" onclick="toggleTaskStatus('${task.id}', 'completed')">✔️</button>
-                                            <button class="task-btn cross" style="background: ${task.status === 'failed' ? 'var(--danger)' : 'transparent'}; color: ${task.status === 'failed' ? 'white' : 'inherit'}; border-color: ${task.status === 'failed' ? 'var(--danger)' : 'var(--border)'};" onclick="toggleTaskStatus('${task.id}', 'failed')">❌</button>
-                                            <button class="task-btn edit" onclick="editTask('${task.id}')">✏️</button>
-                                            <button class="task-btn delete" onclick="deleteTaskAndRender('${task.id}')">🗑️</button>
-                                        </div>
-                                    </div>
-                                `).join('')}
-                            </div>
-                        ` : ''}
-                    </div>
-                `;
-            }).join('')}
-        </div>
-        ${dayTasks.length > 0 ? `
-            <div style="margin-top: 2rem; padding-top: 2rem; border-top: 2px solid var(--border);">
-                <h3 style="color: var(--primary); margin-bottom: 1rem;">Custom Tasks</h3>
-                <div class="schedule-blocks">
-                    ${dayTasks.map(task => `
-                        <div class="schedule-block ${task.status === 'completed' ? 'completed' : ''} ${task.status === 'failed' ? 'failed' : ''}">
-                            <div style="display: flex; align-items: center; gap: 0.8rem;">
-                                <div style="flex: 1; min-width: 0;">
-                                    <div class="schedule-time" style="color: ${task.status === 'failed' ? 'var(--danger)' : (task.status === 'completed' ? 'var(--success)' : 'var(--primary)')};">⏰ ${task.time}</div>
-                                    <div class="schedule-title" style="text-decoration: ${task.status === 'completed' || task.status === 'failed' ? 'line-through' : 'none'}; color: ${task.status === 'failed' ? 'var(--text-light)' : 'inherit'}; font-weight: 700; font-size: 1.1rem; margin-top: 0.1rem;">${task.title}</div>
-                                    <div style="display: flex; align-items: center; flex-wrap: wrap; gap: 0.25rem; margin-top: 0.4rem;">
-                                        <span class="task-category" style="background-color: ${CATEGORY_COLORS[task.category] || 'var(--primary)'}; margin-top: 0; padding: 0.1rem 0.4rem; font-size: 0.65rem;">${task.category}</span>
-                                        <span class="task-status-badge ${task.status}" style="margin-top: 0; padding: 0.1rem 0.4rem; font-size: 0.65rem; font-weight: 700; border-radius: 4px; text-transform: uppercase; ${
-                                            task.status === 'completed' ? 'background: rgba(72,187,120,0.15); color: var(--success);' :
-                                            task.status === 'failed' ? 'background: rgba(245,101,101,0.15); color: var(--danger);' :
-                                            task.status === 'in-progress' ? 'background: rgba(246,173,85,0.15); color: var(--warning);' :
-                                            'background: rgba(113,128,150,0.15); color: var(--text-light);'
-                                        }">${task.status === 'failed' ? 'Not Done' : task.status === 'completed' ? 'Completed' : task.status === 'in-progress' ? 'In Progress' : 'Pending'}</span>
-                                    </div>
-                                    ${task.notes ? `<p style="font-size: 0.85rem; color: var(--text-light); margin-top: 0.5rem;">${task.notes}</p>` : ''}
-                                </div>
-                                <div class="task-actions" style="align-items: center; gap: 0.25rem;">
-                                    <button class="task-btn check" style="background: ${task.status === 'completed' ? 'var(--success)' : 'transparent'}; color: ${task.status === 'completed' ? 'white' : 'inherit'}; border-color: ${task.status === 'completed' ? 'var(--success)' : 'var(--border)'};" onclick="toggleTaskStatus('${task.id}', 'completed')">✔️</button>
-                                    <button class="task-btn cross" style="background: ${task.status === 'failed' ? 'var(--danger)' : 'transparent'}; color: ${task.status === 'failed' ? 'white' : 'inherit'}; border-color: ${task.status === 'failed' ? 'var(--danger)' : 'var(--border)'};" onclick="toggleTaskStatus('${task.id}', 'failed')">❌</button>
-                                    <button class="task-btn edit" onclick="editTask('${task.id}')">✏️</button>
-                                    <button class="task-btn delete" onclick="deleteTaskAndRender('${task.id}')">🗑️</button>
-                                </div>
-                            </div>
-                        </div>
-                    `).join('')}
-                </div>
-            </div>
-        ` : ''}
-    `;
-
-    $('#dayDetail').innerHTML = html;
-}
-
-/* ===================== ANALYTICS VIEW RENDERING ===================== */
-function renderAnalyticsView() {
-    const activeMonth = currentDate.getMonth(); // 0-11
-    const activeYear = currentDate.getFullYear();
-    
-    // Get month name
-    const monthName = currentDate.toLocaleString('en-US', { month: 'long' });
-    
-    // Filter tasks for the selected month
-    const monthlyTasks = tasks.filter(task => {
-        const taskDate = new Date(task.date);
-        return taskDate.getMonth() === activeMonth && taskDate.getFullYear() === activeYear;
-    });
-    
-    // Calculate custom task stats
-    const totalTasks = monthlyTasks.length;
-    const completedTasks = monthlyTasks.filter(t => t.status === 'completed').length;
-    const failedTasks = monthlyTasks.filter(t => t.status === 'failed').length;
-    const pendingTasks = monthlyTasks.filter(t => t.status === 'pending' || t.status === 'in-progress').length;
-    
-    const taskCompletionRate = totalTasks > 0 ? Math.round((completedTasks / totalTasks) * 100) : 0;
-    const taskFailureRate = totalTasks > 0 ? Math.round((failedTasks / totalTasks) * 100) : 0;
-    
-    // Calculate schedule template block stats for this month
-    let totalScheduleBlocks = 0;
-    let completedScheduleBlocks = 0;
-    
-    // Days in current month
-    const daysInMonth = new Date(activeYear, activeMonth + 1, 0).getDate();
-    
-    for (let day = 1; day <= daysInMonth; day++) {
-        const date = new Date(activeYear, activeMonth, day);
-        const dayOfWeek = date.getDay();
-        const dateStr = formatDate(date);
-        
-        const dayData = weeklySchedule[dayOfWeek] || { blocks: [] };
-        const blocks = dayData.blocks || [];
-        
-        totalScheduleBlocks += blocks.length;
-        blocks.forEach((_, idx) => {
-            if (isScheduleItemCompleted(dateStr, idx)) {
-                completedScheduleBlocks++;
-            }
-        });
-    }
-    
-    const scheduleConsistencyRate = totalScheduleBlocks > 0 ? Math.round((completedScheduleBlocks / totalScheduleBlocks) * 100) : 0;
-    
-    // Generate actionable insights coach logs
-    let insightHeader = "Keep pushing forward! 🚀";
-    let insightText = "Add more custom tasks and track your schedule to generate detailed personal productivity insights.";
-    
-    if (totalTasks > 0 || totalScheduleBlocks > 0) {
-        if (taskCompletionRate >= 75 && scheduleConsistencyRate >= 70) {
-            insightHeader = "Outstanding Performance! 🏆";
-            insightText = `You are absolutely crushing it! Your monthly completion rate is ${taskCompletionRate}% and you followed ${scheduleConsistencyRate}% of your routine blocks. You are protecting your habits aggressively!`;
-        } else if (taskCompletionRate >= 50) {
-            insightHeader = "Strong Habits Building! 🌱";
-            insightText = `Good consistency! You completed ${completedTasks} custom tasks this month. Tip: Look at the tasks marked 'Not Done' (${failedTasks}) to see if they can be scheduled for a different time range.`;
-        } else {
-            insightHeader = "Focus & Realignment Time ⚓";
-            insightText = `Every step is progress. You completed ${completedTasks} tasks and logged ${completedScheduleBlocks} schedule blocks this month. Let's aim to simplify your template block titles to build momentum!`;
-        }
-    }
-
-    const apiKey = localStorage.getItem('lifesystem_gemini_api_key');
-    const aiCoachButton = apiKey ? `
-        <button id="aiCoachBtn" onclick="consultRealAiCoach()" style="background: var(--primary); border: none; color: white; padding: 0.5rem 1rem; border-radius: 20px; font-size: 0.8rem; font-weight: 700; cursor: pointer; transition: all 0.3s; margin-left: auto;">
-            🧠 Consult Live AI Coach
-        </button>
-    ` : `
-        <button onclick="promptForApiKey()" style="background: transparent; border: 1px dashed var(--primary); color: var(--primary); padding: 0.5rem 1rem; border-radius: 20px; font-size: 0.8rem; font-weight: 700; cursor: pointer; transition: all 0.3s; margin-left: auto;">
-            🔑 Set API Key for Live AI Coach
-        </button>
-    `;
-
-    const html = `
-        <div class="analytics-header" style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 2rem; flex-wrap: wrap; gap: 1rem;">
-            <div>
-                <h2 style="font-size: 1.8rem; font-weight: 800; background: linear-gradient(135deg, var(--primary) 0%, var(--accent) 100%); -webkit-background-clip: text; -webkit-text-fill-color: transparent;">📈 Performance Analytics</h2>
-                <p style="color: var(--text-light); margin-top: 0.3rem;">Monthly progress coach & calendar insights for <strong>${monthName} ${activeYear}</strong></p>
-            </div>
-            <div style="display: flex; gap: 0.5rem;">
-                <button class="nav-btn" onclick="adjustMonth(-1)">◀ Prev Month</button>
-                <button class="nav-btn" onclick="adjustMonth(1)">Next Month ▶</button>
-            </div>
-        </div>
-        
-        <div class="analytics-grid" style="display: grid; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); gap: 1.5rem; margin-bottom: 1.5rem;">
-            
-            <!-- Custom Tasks Analytics Card -->
-            <div class="analytics-card" style="background: var(--bg-secondary); border: 1px solid var(--border); padding: 1.5rem; border-radius: 16px; box-shadow: 0 10px 30px rgba(0,0,0,0.1);">
-                <h3 style="color: var(--primary); font-size: 1.2rem; font-weight: 700; margin-bottom: 1.2rem; border-bottom: 1px solid var(--border); padding-bottom: 0.5rem; display: flex; align-items: center; gap: 0.5rem;">🎯 Task Progress</h3>
-                
-                <div style="display: flex; align-items: center; gap: 1.5rem; margin-bottom: 1.5rem;">
-                    <!-- Circular visual progress indicator -->
-                    <div style="position: relative; width: 90px; height: 90px; border-radius: 50%; background: conic-gradient(var(--success) ${taskCompletionRate * 3.6}deg, var(--border) 0deg); display: flex; align-items: center; justify-content: center;">
-                        <div style="position: absolute; width: 74px; height: 74px; border-radius: 50%; background: var(--bg); display: flex; align-items: center; justify-content: center; font-weight: 800; font-size: 1.25rem; color: var(--text);">
-                            ${taskCompletionRate}%
-                        </div>
-                    </div>
-                    <div style="flex: 1;">
-                        <div style="font-size: 0.85rem; font-weight: 600; color: var(--text-light);">COMPLETION RATE</div>
-                        <div style="font-size: 1.8rem; font-weight: 800; color: var(--success); margin-top: 0.1rem;">${completedTasks} <span style="font-size: 0.9rem; font-weight: 500; color: var(--text-light);">/ ${totalTasks} Done</span></div>
-                    </div>
-                </div>
-                
-                <div style="display: flex; flex-direction: column; gap: 0.8rem;">
-                    <div>
-                        <div style="display: flex; justify-content: space-between; font-size: 0.85rem; margin-bottom: 0.3rem;">
-                            <span>Completed Tasks</span>
-                            <span style="font-weight: 700; color: var(--success);">${completedTasks}</span>
-                        </div>
-                        <div style="height: 6px; background: var(--border); border-radius: 3px; overflow: hidden;">
-                            <div style="width: ${taskCompletionRate}%; height: 100%; background: var(--success);"></div>
-                        </div>
-                    </div>
-                    
-                    <div>
-                        <div style="display: flex; justify-content: space-between; font-size: 0.85rem; margin-bottom: 0.3rem;">
-                            <span>Not Done (Failed)</span>
-                            <span style="font-weight: 700; color: var(--danger);">${failedTasks}</span>
-                        </div>
-                        <div style="height: 6px; background: var(--border); border-radius: 3px; overflow: hidden;">
-                            <div style="width: ${taskFailureRate}%; height: 100%; background: var(--danger);"></div>
-                        </div>
-                    </div>
-                    
-                    <div style="display: flex; justify-content: space-between; font-size: 0.85rem; border-top: 1px solid var(--border); padding-top: 0.8rem; margin-top: 0.2rem;">
-                        <span>Pending / In Progress</span>
-                        <span style="font-weight: 700; color: var(--warning);">${pendingTasks}</span>
-                    </div>
-                </div>
-            </div>
-            
-            <!-- Schedule Consistency Analytics Card -->
-            <div class="analytics-card" style="background: var(--bg-secondary); border: 1px solid var(--border); padding: 1.5rem; border-radius: 16px; box-shadow: 0 10px 30px rgba(0,0,0,0.1);">
-                <h3 style="color: var(--primary); font-size: 1.2rem; font-weight: 700; margin-bottom: 1.2rem; border-bottom: 1px solid var(--border); padding-bottom: 0.5rem; display: flex; align-items: center; gap: 0.5rem;">📅 Schedule Consistency</h3>
-                
-                <div style="display: flex; align-items: center; gap: 1.5rem; margin-bottom: 1.5rem;">
-                    <!-- Circular visual progress indicator -->
-                    <div style="position: relative; width: 90px; height: 90px; border-radius: 50%; background: conic-gradient(var(--accent) ${scheduleConsistencyRate * 3.6}deg, var(--border) 0deg); display: flex; align-items: center; justify-content: center;">
-                        <div style="position: absolute; width: 74px; height: 74px; border-radius: 50%; background: var(--bg); display: flex; align-items: center; justify-content: center; font-weight: 800; font-size: 1.25rem; color: var(--text);">
-                            ${scheduleConsistencyRate}%
-                        </div>
-                    </div>
-                    <div style="flex: 1;">
-                        <div style="font-size: 0.85rem; font-weight: 600; color: var(--text-light);">ROUTINE INTEGRITY</div>
-                        <div style="font-size: 1.8rem; font-weight: 800; color: var(--accent); margin-top: 0.1rem;">${completedScheduleBlocks} <span style="font-size: 0.9rem; font-weight: 500; color: var(--text-light);">/ ${totalScheduleBlocks} blocks</span></div>
-                    </div>
-                </div>
-                
-                <div style="display: flex; flex-direction: column; gap: 0.8rem;">
-                    <p style="font-size: 0.85rem; color: var(--text-light); line-height: 1.5;">
-                        This tracking score measures how consistently you follow and mark completion of your pre-defined daily routine block schedules configured in your template manager.
-                    </p>
-                    <div style="background: rgba(102, 126, 234, 0.08); padding: 0.8rem; border-radius: 8px; border-left: 3px solid var(--primary); font-size: 0.85rem; margin-top: 0.2rem;">
-                        <strong>Daily Habit Tracker:</strong> Protect your wake-up time blocks aggressively to build routine strength!
-                    </div>
-                </div>
-            </div>
-        </div>
-        
-        <!-- Actionable coach logs full-width -->
-        <div class="analytics-card" style="background: linear-gradient(135deg, rgba(102, 126, 234, 0.1) 0%, rgba(118, 75, 162, 0.1) 100%); border: 1px solid var(--primary); padding: 1.8rem; border-radius: 16px; position: relative; overflow: hidden; box-shadow: 0 10px 30px rgba(102, 126, 234, 0.15);">
-            <div style="position: absolute; right: -20px; bottom: -20px; font-size: 8rem; opacity: 0.05; pointer-events: none; transform: rotate(15deg);">💡</div>
-            <div style="display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 1rem; margin-bottom: 0.8rem;">
-                <div style="font-size: 1.8rem;">💡</div>
-                ${aiCoachButton}
-            </div>
-            <h3 id="aiCoachHeader" style="color: var(--primary); font-size: 1.35rem; font-weight: 800; margin-bottom: 0.6rem;">${insightHeader}</h3>
-            <p id="aiCoachText" style="color: var(--text); font-size: 1rem; line-height: 1.7; margin-bottom: 1.2rem; max-width: 90%;">
-                "${insightText}"
-            </p>
-            <div style="font-size: 0.8rem; font-weight: 700; color: var(--text-light); text-transform: uppercase; letter-spacing: 1.5px; display: flex; align-items: center; gap: 0.5rem;">
-                <span style="display: inline-block; width: 6px; height: 6px; background: var(--success); border-radius: 50%;"></span>
-                ⚡ Personal Progress Coach Active
-            </div>
-        </div>
-    `;
-    
-    $('#analyticsContent').innerHTML = html;
-}
-
-window.adjustMonth = function(direction) {
-    currentDate.setMonth(currentDate.getMonth() + direction);
-    updateDateDisplay();
-    renderAnalyticsView();
-};
-
-window.promptForApiKey = function() {
-    const key = prompt('Enter your free Gemini API Key (get it from aistudio.google.com):');
-    if (key) {
-        localStorage.setItem('lifesystem_gemini_api_key', key.trim());
-        renderAnalyticsView();
-    }
-};
-
-window.consultRealAiCoach = async function() {
-    const apiKey = localStorage.getItem('lifesystem_gemini_api_key');
-    if (!apiKey) {
-        promptForApiKey();
-        return;
-    }
-    
-    const activeMonth = currentDate.getMonth();
-    const activeYear = currentDate.getFullYear();
-    const monthName = currentDate.toLocaleString('en-US', { month: 'long' });
-    
-    // Aggregate real stats
-    const monthlyTasks = tasks.filter(task => {
-        const taskDate = new Date(task.date);
-        return taskDate.getMonth() === activeMonth && taskDate.getFullYear() === activeYear;
-    });
-    
-    const totalTasks = monthlyTasks.length;
-    const completedTasks = monthlyTasks.filter(t => t.status === 'completed').length;
-    const failedTasks = monthlyTasks.filter(t => t.status === 'failed').length;
-    const taskCompletionRate = totalTasks > 0 ? Math.round((completedTasks / totalTasks) * 100) : 0;
-    
-    let totalScheduleBlocks = 0;
-    let completedScheduleBlocks = 0;
-    const daysInMonth = new Date(activeYear, activeMonth + 1, 0).getDate();
-    
-    for (let day = 1; day <= daysInMonth; day++) {
-        const date = new Date(activeYear, activeMonth, day);
-        const dayOfWeek = date.getDay();
-        const dateStr = formatDate(date);
-        const dayData = weeklySchedule[dayOfWeek] || { blocks: [] };
-        const blocks = dayData.blocks || [];
-        totalScheduleBlocks += blocks.length;
-        blocks.forEach((_, idx) => {
-            if (isScheduleItemCompleted(dateStr, idx)) completedScheduleBlocks++;
-        });
-    }
-    
-    const scheduleConsistencyRate = totalScheduleBlocks > 0 ? Math.round((completedScheduleBlocks / totalScheduleBlocks) * 100) : 0;
-    
-    const coachTextEl = $('#aiCoachText');
-    const coachHeaderEl = $('#aiCoachHeader');
-    const coachBtn = $('#aiCoachBtn');
-    
-    coachTextEl.textContent = 'Analyzing your calendar patterns and asking Gemini for strategic roasts/boosts...';
-    coachBtn.disabled = true;
-    coachBtn.textContent = '🧠 Consulting...';
-    
-    try {
-        const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${apiKey}`;
-        
-        const response = await fetch(url, {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json'
-            },
-            body: JSON.stringify({
-                contents: [{
-                    parts: [{
-                        text: `Stats for ${monthName} ${activeYear}:
-- Custom tasks completed: ${completedTasks} out of ${totalTasks} (${taskCompletionRate}% completion rate)
-- Custom tasks marked "Not Done" (failed): ${failedTasks}
-- Routine blocks followed: ${completedScheduleBlocks} out of ${totalScheduleBlocks} (${scheduleConsistencyRate}% schedule consistency)
-
-Please write a highly engaging, custom-tailored progress evaluation (approx 3-5 sentences). Give a healthy blend of direct, witty habit coaching (a slight roast if consistency is low, or high praise/boost if consistency is high), and 1 actionable productivity tip for next week based on these stats.`
-                    }]
-                }],
-                generationConfig: {
-                    systemInstruction: {
-                        parts: [{
-                            text: "You are the ultimate personal productivity AI Coach for the Life System application. You speak with wit, clarity, and intense motivation, like a high-performing mentor or a witty elite coach. Keep your response concise (maximum 100 words) and directly actionable."
-                        }]
-                    }
-                }
-            })
-        });
-        
-        if (!response.ok) throw new Error('Failed to fetch from Gemini');
-        const data = await response.json();
-        const text = data.candidates?.[0]?.content?.parts?.[0]?.text;
-        
-        if (text) {
-            coachHeaderEl.textContent = taskCompletionRate >= 70 ? 'AI Coach Boost! 🔥' : 'AI Coach Realignment! ⚡';
-            coachTextEl.textContent = `"${text.trim()}"`;
-        } else {
-            throw new Error('Empty response');
-        }
-    } catch (e) {
-        console.error(e);
-        coachTextEl.textContent = 'Failed to load live AI roasts. Make sure your API key is correct!';
+        console.error('Error loading data:', error);
     } finally {
-        coachBtn.disabled = false;
-        coachBtn.textContent = '🧠 Consult Live AI Coach';
-    }
-};
-
-function render() {
-    updateDateDisplay();
-
-    $$('.view').forEach(v => v.classList.remove('active'));
-
-    if (currentView === 'week') {
-        $('#weekView').classList.add('active');
-        renderWeekView();
-    } else if (currentView === 'day') {
-        $('#dayView').classList.add('active');
-        renderDayView();
-    } else if (currentView === 'analytics') {
-        $('#analyticsView').classList.add('active');
-        renderAnalyticsView();
+        toggleLoading(false);
     }
 }
 
-function openDayView(dateStr) {
-    currentDate = new Date(dateStr);
-    currentView = 'day';
-    $$('.view-btn').forEach(b => b.classList.remove('active'));
-    $$('.view-btn')[1].classList.add('active');
-    render();
-}
-
-function switchToWeekView() {
-    currentView = 'week';
-    $$('.view-btn').forEach(b => b.classList.remove('active'));
-    $$('.view-btn')[0].classList.add('active');
-    render();
-}
-
-function deleteTaskAndRender(id) {
-    if (confirm('Delete this task?')) {
-        deleteTask(id);
+async function saveQuests() {
+    try {
+        if (useFirebase && db) {
+            localStorage.setItem('lifesystem_quests', JSON.stringify(tasks));
+            // Firestore write in batch or set individually
+            await Promise.all(tasks.map(t => {
+                const { id, ...data } = t;
+                return db.collection('users').doc(currentUserId).collection('tasks').doc(id).set(data);
+            }));
+        } else {
+            localStorage.setItem('lifesystem_quests', JSON.stringify(tasks));
+        }
+    } catch (error) {
+        console.error('Error saving quests:', error);
     }
 }
 
-function editTask(id) {
-    const task = tasks.find(t => t.id === id);
-    if (task) {
-        editingTaskId = id;
-        editingScheduleBlock = null;
-        
-        $('#taskDate').value = task.date;
-        $('#taskTime').value = task.time;
-        $('#taskTitle').value = task.title;
-        $('#taskCategory').value = task.category;
-        $('#taskStatus').value = task.status;
-        $('#taskNotes').value = task.notes || '';
-        
-        $('#deleteBtn').style.display = 'flex';
-        $('#submitBtn').textContent = 'Update Task';
-        $('#scheduleNotesSection').style.display = 'none';
-        modal.classList.add('active');
+async function saveQuestSettings() {
+    try {
+        if (useFirebase && db) {
+            localStorage.setItem('lifesystem_quest_settings', JSON.stringify(questSettings));
+            await db.collection('users').doc(currentUserId).collection('data').doc('questSettings').set(questSettings);
+            updateSyncBadge('Synced', true);
+        } else {
+            localStorage.setItem('lifesystem_quest_settings', JSON.stringify(questSettings));
+        }
+    } catch (error) {
+        console.error('Error saving settings:', error);
     }
 }
 
-/* ===================== AUTHENTICATION SYSTEM ===================== */
-let isGuestModeActive = false;
+function toggleLoading(show) {
+    const indicator = $('#loadingIndicator');
+    if (indicator) {
+        if (show) indicator.classList.add('active');
+        else indicator.classList.remove('active');
+    }
+}
+
+/* ===================== AUTHENTICATION HANDLING ===================== */
 let authMode = 'login'; // 'login' or 'signup'
 
 function initAuth() {
     if (!useFirebase || !db) {
-        // If Firebase failed to initialize, default to offline guest mode automatically
         isGuestModeActive = true;
         useFirebase = false;
-        $('#authModal').style.display = 'none';
-        loadTasks().then(() => render());
+        $('#authModal').classList.remove('active');
+        loadData().then(() => render());
         return;
     }
 
     const auth = firebase.auth();
 
-    // Listen for auth state changes
     auth.onAuthStateChanged(async (user) => {
         if (user) {
-            // User is signed in
             currentUserId = user.uid;
             isGuestModeActive = false;
             useFirebase = true;
             
-            // Extract username from virtual email
             const username = user.email.split('@')[0];
             $('#usernameDisplay').textContent = username;
             $('#userProfile').style.display = 'flex';
-            $('#authModal').style.display = 'none';
+            $('#authModal').classList.remove('active');
             
-            updateSyncStatus('Synced', true);
-            await loadTasks();
+            updateSyncBadge('Synced', true);
+            await loadData();
             render();
-            checkDailyQuote(); // Trigger daily motivational quote popup once logged in!
+            checkDailyQuotePopup();
         } else {
-            // User is signed out
             currentUserId = 'anonymous_user';
             $('#userProfile').style.display = 'none';
             
             if (isGuestModeActive) {
-                // If they bypassed it with guest mode
                 useFirebase = false;
-                $('#authModal').style.display = 'none';
-                updateSyncStatus('Local Storage', false);
-                await loadTasks();
+                $('#authModal').classList.remove('active');
+                updateSyncBadge('Local Storage', false);
+                await loadData();
                 render();
             } else {
-                // Show Auth modal
                 showAuthModal();
             }
         }
     });
 
-    // Form submission (Login / Sign Up)
+    // Form submission
     $('#authForm').addEventListener('submit', async (e) => {
         e.preventDefault();
         const username = $('#authUsername').value.trim().toLowerCase();
         const password = $('#authPassword').value;
         const errorEl = $('#authError');
         
-        // Hide previous error
         errorEl.style.display = 'none';
         errorEl.textContent = '';
         
-        // Programmatically translate username to virtual email
         const email = `${username}@lifescheduler.local`;
-        
         const submitBtn = $('#authSubmitBtn');
         submitBtn.disabled = true;
         submitBtn.textContent = authMode === 'login' ? 'Logging in...' : 'Signing up...';
@@ -1214,14 +282,14 @@ function initAuth() {
             }
         } catch (error) {
             console.error('Auth error:', error);
-            errorEl.textContent = getAuthErrorMessage(error);
+            errorEl.textContent = error.message;
             errorEl.style.display = 'block';
             submitBtn.disabled = false;
             submitBtn.textContent = authMode === 'login' ? 'Log In' : 'Sign Up';
         }
     });
 
-    // Toggle Link (Login <-> Signup)
+    // Toggle between Login and Signup
     $('#authToggleLink').addEventListener('click', () => {
         const errorEl = $('#authError');
         errorEl.style.display = 'none';
@@ -1229,370 +297,830 @@ function initAuth() {
         if (authMode === 'login') {
             authMode = 'signup';
             $('#authTitle').textContent = 'Sign Up';
-            $('#authSubtitle').textContent = 'Create your secure personal schedule';
+            $('#authSubtitle').textContent = 'Create your Bubble Quest account';
             $('#authSubmitBtn').textContent = 'Sign Up';
             $('#authToggleText').textContent = 'Already have an account?';
             $('#authToggleLink').textContent = 'Log In';
         } else {
             authMode = 'login';
             $('#authTitle').textContent = 'Log In';
-            $('#authSubtitle').textContent = 'Access your personal Life System schedule';
+            $('#authSubtitle').textContent = 'Access your Bubble Quest account';
             $('#authSubmitBtn').textContent = 'Log In';
             $('#authToggleText').textContent = "Don't have an account?";
             $('#authToggleLink').textContent = 'Sign Up';
         }
     });
 
-    // Sign Out Button
+    // Sign Out
     $('#signOutBtn').addEventListener('click', async () => {
         try {
-            isGuestModeActive = false; // Reset guest mode on active log out
+            isGuestModeActive = false;
             await auth.signOut();
         } catch (error) {
             console.error('Error signing out:', error);
         }
     });
 
-    // Guest Mode Button
-    $('#authGuestBtn').addEventListener('click', async () => {
+    // Offline / Guest Mode Bypassing
+    $('#authGuestBtn').addEventListener('click', () => {
         isGuestModeActive = true;
         useFirebase = false;
-        $('#authModal').style.display = 'none';
-        updateSyncStatus('Local Storage', false);
-        await loadTasks();
-        render();
+        $('#authModal').classList.remove('active');
+        updateSyncBadge('Local Storage', false);
+        loadData().then(() => render());
     });
 }
 
 function showAuthModal() {
-    $('#authModal').style.display = 'flex';
+    $('#authModal').classList.add('active');
     $('#authForm').reset();
     $('#authError').style.display = 'none';
-    
-    // Set default mode to login
     authMode = 'login';
-    $('#authTitle').textContent = 'Log In';
-    $('#authSubtitle').textContent = 'Access your personal Life System schedule';
-    $('#authSubmitBtn').textContent = 'Log In';
-    $('#authToggleText').textContent = "Don't have an account?";
-    $('#authToggleLink').textContent = 'Sign Up';
-    $('#authSubmitBtn').disabled = false;
 }
 
-function getAuthErrorMessage(error) {
-    switch (error.code) {
-        case 'auth/invalid-email':
-            return 'Invalid username format. Try simple alphanumeric characters.';
-        case 'auth/user-disabled':
-            return 'This account has been disabled.';
-        case 'auth/user-not-found':
-            return 'Username not found. Create a new account by clicking "Sign Up" below!';
-        case 'auth/wrong-password':
-            return 'Incorrect password. Please try again.';
-        case 'auth/email-already-in-use':
-            return 'This username is already taken. Please choose another one.';
-        case 'auth/weak-password':
-            return 'Password is too weak. Make it at least 6 characters long.';
-        case 'auth/operation-not-allowed':
-            return 'Signing up with email/password is currently disabled in your Firebase console. Go to Auth settings and enable Email/Password!';
-        default:
-            return error.message;
+/* ===================== GEMINI AI QUEST GENERATION ===================== */
+async function generateDailyQuests(category, force = false) {
+    if (isGeneratingQuests) return;
+    isGeneratingQuests = true;
+
+    // Show loading indicators
+    const loader = $('#aiModalLoader');
+    if (loader) {
+        $('#aiModalLoaderText').textContent = `Generating custom ${category} quests via Gemini...`;
+        loader.style.display = 'flex';
     }
-}
 
-/* ===================== ONBOARDING & AI ROUTINE ARCHITECT SYSTEM ===================== */
-function showOnboardingModal() {
-    $('#onboardingModal').style.display = 'flex';
-}
-
-$('#onboardingHealthyBtn').addEventListener('click', async () => {
-    weeklySchedule = JSON.parse(JSON.stringify(DEFAULT_SCHEDULE));
-    await saveWeeklySchedule();
-    $('#onboardingModal').style.display = 'none';
-    render();
-});
-
-$('#onboardingBlankBtn').addEventListener('click', async () => {
-    weeklySchedule = {
-        0: { blocks: [], rest: true },
-        1: { blocks: [] },
-        2: { blocks: [] },
-        3: { blocks: [] },
-        4: { blocks: [] },
-        5: { blocks: [] },
-        6: { blocks: [] }
-    };
-    await saveWeeklySchedule();
-    $('#onboardingModal').style.display = 'none';
-    render();
-});
-
-// Trigger AI Routine prompt modal step
-$('#onboardingAiBtn').addEventListener('click', () => {
-    $('#onboardingModal').style.display = 'none';
+    const todayStr = getTodayDateStr();
+    const apiKey = localStorage.getItem('lifesystem_gemini_api_key') || $('#settingsApiKey').value.trim();
     
-    // Pre-fill Gemini API key input if already present in localStorage
-    const savedKey = localStorage.getItem('lifesystem_gemini_api_key');
-    if (savedKey) {
-        $('#aiApiKeyInput').value = savedKey;
+    // Read category settings
+    let goals = '', level = 'Beginner', focus = '';
+    if (category === 'tech') {
+        goals = questSettings.techGoals;
+        level = questSettings.techLevel;
+        focus = questSettings.techFocus;
+    } else if (category === 'piano') {
+        goals = questSettings.pianoGoals;
+        level = questSettings.pianoLevel;
+        focus = questSettings.pianoFocus;
+    } else if (category === 'music') {
+        goals = questSettings.musicGoals;
+        level = questSettings.musicLevel;
+        focus = questSettings.musicFocus;
     }
-    
-    $('#aiOnboardingModal').style.display = 'flex';
-});
 
-$('#aiOnboardingBackBtn').addEventListener('click', () => {
-    $('#aiOnboardingModal').style.display = 'none';
-    $('#onboardingModal').style.display = 'flex';
-});
+    // Get recently completed tasks to avoid repetition
+    const categoryQuests = tasks.filter(t => t.category === category);
+    const recentCompletedTitles = categoryQuests
+        .filter(t => t.completed)
+        .slice(-10)
+        .map(t => t.title);
 
-$('#aiOnboardingGenerateBtn').addEventListener('click', generateAiRoutine);
-
-async function generateAiRoutine() {
-    const promptText = $('#aiOnboardingInput').value.trim();
-    const apiKey = $('#aiApiKeyInput').value.trim();
-    const errorEl = $('#aiOnboardingError');
-    const loaderEl = $('#aiOnboardingLoader');
-    const generateBtn = $('#aiOnboardingGenerateBtn');
-    
-    if (!promptText) {
-        errorEl.textContent = 'Please describe your perfect week first!';
-        errorEl.style.display = 'block';
-        return;
-    }
-    
+    // If key is missing, fallback to predefined tasks
     if (!apiKey) {
-        errorEl.textContent = 'Please enter your Gemini API Key! It is completely free to get.';
-        errorEl.style.display = 'block';
+        console.warn('⚠️ Gemini API Key not found. Falling back to default list.');
+        generateFallbackQuests(category, level, todayStr);
+        await saveQuests();
+        isGeneratingQuests = false;
+        if (loader) loader.style.display = 'none';
+        render();
+        if (activeCategory === category) openQuestModal(category);
         return;
     }
-    
-    // Save API key for future AI Coach roasts too!
-    localStorage.setItem('lifesystem_gemini_api_key', apiKey);
-    
-    errorEl.style.display = 'none';
-    loaderEl.style.display = 'block';
-    generateBtn.disabled = true;
-    
+
     try {
         const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${apiKey}`;
         
+        const promptText = `
+        Category: "${category}"
+        User's Skill Level: "${level}"
+        User's Goals: "${goals}"
+        Current Monthly Focus: "${focus}"
+        Recently Completed Quests (DO NOT REPEAT):
+        ${recentCompletedTitles.length > 0 ? recentCompletedTitles.map(t => `- ${t}`).join('\n') : 'None'}
+        `;
+
+        const systemPrompt = `
+        You are the AI Quest Master for a gamified RPG skill progression app.
+        Your job is to generate exactly 3 daily tasks for the category: "${category}".
+        
+        The tasks must be:
+        1. Specific and Actionable (no vague descriptions like "Learn React" or "Practice Piano").
+        2. Finishable in one sitting (15 to 60 minutes).
+        3. Small enough to complete today.
+        4. Aligned with the user's monthly focus, goals, and skill level.
+        
+        Examples of Good Specific Tasks:
+        - "Watch React Lesson 12 about State Hook"
+        - "Build a basic login component UI with controlled inputs"
+        - "Practice C Major scale and arpeggios slowly for 15 minutes"
+        - "Sight-read 1 page from Bartok Mikrokosmos Book 2"
+        - "Program a basic drum grid pattern in Ableton DAW"
+        - "Recreate the bass synth patch of a favorite song using Serum"
+
+        You MUST output a JSON object with a single key "tasks" containing an array of exactly 3 strings. Do not include markdown wraps or anything else.
+        Example:
+        {
+          "tasks": [
+            "Watch React Lesson 12",
+            "Build Login Component UI",
+            "Push today's code changes to GitHub"
+          ]
+        }
+        `;
+
         const response = await fetch(url, {
             method: 'POST',
-            headers: {
-                'Content-Type': 'application/json'
-            },
+            headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
-                contents: [{
-                    parts: [{
-                        text: `User request: ${promptText}\n\nPlease generate their 7-day schedule template in JSON format.`
-                    }]
-                }],
+                contents: [{ parts: [{ text: promptText }] }],
                 generationConfig: {
                     responseMimeType: "application/json",
-                    systemInstruction: {
-                        parts: [{
-                            text: `You are the AI Routine Architect for a productivity web application called Life System.
-Your job is to generate a custom 7-day schedule template based on the user's goals, profession, and routine preferences.
-Return a single JSON object mapping day indexes ("0" for Sunday, "1" for Monday, ..., "6" for Saturday) to their routine blocks.
-
-The JSON MUST match this exact structure:
-{
-  "0": {
-    "blocks": [
-      { "time": "6:00 AM - 8:00 AM", "title": "Sleep In", "description": "No alarm, sleep at your pace" },
-      { "time": "8:00 AM - 10:00 AM", "title": "Morning at your pace", "description": "Relax, no rush" }
-    ],
-    "rest": true
-  },
-  "1": {
-    "blocks": [
-      { "time": "3:30 AM", "title": "Wake-up Ritual", "description": "Water, wash face, light food" },
-      { "time": "9:00 AM - 11:00 AM", "title": "Internship", "description": "Focus work" }
-    ]
-  }
-}
-
-Generate between 3 to 8 blocks per day depending on the day and user description. Align times elegantly. Sunday ("0") should generally be a Rest/Recovery day unless they state otherwise.
-Ensure all times are formatted clearly as string values.`
-                        }]
-                    }
+                    systemInstruction: { parts: [{ text: systemPrompt }] }
                 }
             })
         });
-        
+
         if (!response.ok) {
             const errData = await response.json();
-            throw new Error(errData.error?.message || 'API request failed');
+            throw new Error(errData.error?.message || 'Gemini API call failed');
         }
-        
+
         const data = await response.json();
         const textResponse = data.candidates?.[0]?.content?.parts?.[0]?.text;
-        
-        if (!textResponse) {
-            throw new Error('No schedule blocks generated by Gemini.');
+        if (!textResponse) throw new Error('Empty response from AI engine');
+
+        const parsed = JSON.parse(textResponse);
+        if (!parsed.tasks || parsed.tasks.length < 3) {
+            throw new Error('Malformed JSON received from AI');
         }
-        
-        const customTemplate = JSON.parse(textResponse);
-        
-        // Validate and apply
-        weeklySchedule = customTemplate;
-        await saveWeeklySchedule();
-        
-        // Close modal and refresh
-        $('#aiOnboardingModal').style.display = 'none';
-        render();
-        
+
+        // Remove old tasks for today to prevent duplicates if regenerating
+        tasks = tasks.filter(t => !(t.category === category && t.date === todayStr));
+
+        // Add today's generated tasks
+        parsed.tasks.forEach(title => {
+            tasks.push({
+                id: (Date.now() + Math.random()).toString(),
+                category: category,
+                title: title.trim(),
+                completed: false,
+                completedAt: null,
+                notes: '',
+                date: todayStr
+            });
+        });
+
+        await saveQuests();
+
     } catch (error) {
-        console.error('AI Onboarding Error:', error);
-        errorEl.textContent = `Error architecting: ${error.message}`;
-        errorEl.style.display = 'block';
+        console.error('AI Quest Generation failed, utilizing fallbacks:', error);
+        generateFallbackQuests(category, level, todayStr);
+        await saveQuests();
     } finally {
-        loaderEl.style.display = 'none';
-        generateBtn.disabled = false;
+        isGeneratingQuests = false;
+        if (loader) loader.style.display = 'none';
+        render();
+        if (activeCategory === category) openQuestModal(category);
     }
 }
 
-// Template Editor Modal Logic
-function openTemplateEditor() {
-    $('#templateModal').style.display = 'flex';
-    $('#templateDaySelect').value = "1"; // Default to Monday
-    editingTemplateBlockIdx = null;
-    $('#templateBlockForm').reset();
-    $('#templateCancelEditBtn').style.display = 'none';
-    $('#templateFormTitle').textContent = 'Add New Block';
-    $('#templateSaveBlockBtn').textContent = 'Add to Template';
-    renderTemplateBlocksList();
+function generateFallbackQuests(category, level, dateStr) {
+    // Clear today's quests in this category
+    tasks = tasks.filter(t => !(t.category === category && t.date === dateStr));
+
+    const defaults = DEFAULT_QUESTS[category]?.[level] || DEFAULT_QUESTS[category]?.['Beginner'];
+    defaults.forEach(title => {
+        tasks.push({
+            id: (Date.now() + Math.random()).toString(),
+            category: category,
+            title: title,
+            completed: false,
+            completedAt: null,
+            notes: '',
+            date: dateStr
+        });
+    });
 }
 
-function closeTemplateEditor() {
-    $('#templateModal').style.display = 'none';
-}
-
-$('#editTemplateBtn').addEventListener('click', openTemplateEditor);
-$('#closeTemplateBtn').addEventListener('click', closeTemplateEditor);
-
-$('#templateCancelEditBtn').addEventListener('click', () => {
-    editingTemplateBlockIdx = null;
-    $('#templateBlockForm').reset();
-    $('#templateCancelEditBtn').style.display = 'none';
-    $('#templateFormTitle').textContent = 'Add New Block';
-    $('#templateSaveBlockBtn').textContent = 'Add to Template';
-});
-
-$('#templateDaySelect').addEventListener('change', () => {
-    editingTemplateBlockIdx = null;
-    $('#templateBlockForm').reset();
-    $('#templateCancelEditBtn').style.display = 'none';
-    $('#templateFormTitle').textContent = 'Add New Block';
-    $('#templateSaveBlockBtn').textContent = 'Add to Template';
-    renderTemplateBlocksList();
-});
-
-// Render the list of blocks for the selected day in the editor
-function renderTemplateBlocksList() {
-    const day = parseInt($('#templateDaySelect').value);
-    const dayData = weeklySchedule[day];
-    const container = $('#templateBlocksList');
+/* ===================== RESET & SCHEDULER LOGIC ===================== */
+async function checkDailyQuestReset() {
+    const todayStr = getTodayDateStr();
     
-    if (!dayData || !dayData.blocks || dayData.blocks.length === 0) {
-        container.innerHTML = '<div style="text-align: center; color: var(--text-light); padding: 1rem; font-size: 0.9rem;">No blocks configured for this day. Add one below!</div>';
+    // Check if we already have quests generated for today
+    const categories = ['tech', 'piano', 'music'];
+    let needsGeneration = false;
+
+    categories.forEach(cat => {
+        const todayQuests = tasks.filter(t => t.category === cat && t.date === todayStr);
+        if (todayQuests.length === 0) {
+            needsGeneration = true;
+        }
+    });
+
+    if (needsGeneration) {
+        console.log('🌅 New day detected. Generating today\'s quests...');
+        // Generate quests for all categories
+        for (const cat of categories) {
+            const todayQuests = tasks.filter(t => t.category === cat && t.date === todayStr);
+            if (todayQuests.length === 0) {
+                await generateDailyQuests(cat);
+            }
+        }
+    }
+}
+
+/* ===================== RPG PROGRESSION ENGINE ===================== */
+function calculateProgression() {
+    let totalXp = 0;
+    let totalBubblesCompletedCount = 0;
+    
+    // 100 XP per completed task
+    const completedTasks = tasks.filter(t => t.completed);
+    totalXp += completedTasks.length * 100;
+
+    // Group tasks by date & category to reward 300 XP completion bonus
+    const completionsByDay = {};
+    
+    tasks.forEach(t => {
+        const key = `${t.date}_${t.category}`;
+        if (!completionsByDay[key]) {
+            completionsByDay[key] = { total: 0, completed: 0 };
+        }
+        completionsByDay[key].total++;
+        if (t.completed) completionsByDay[key].completed++;
+    });
+
+    // Award bonus
+    Object.values(completionsByDay).forEach(stat => {
+        if (stat.total === 3 && stat.completed === 3) {
+            totalXp += 300;
+            totalBubblesCompletedCount++;
+        }
+    });
+
+    // Level formula: Level = Math.floor(XP / 1000) + 1
+    const level = Math.floor(totalXp / 1000) + 1;
+    const nextLevelXpThreshold = level * 1000;
+    const currentLevelBaseXp = (level - 1) * 1000;
+    const xpEarnedInCurrentLevel = totalXp - currentLevelBaseXp;
+    
+    const xpPercent = Math.min(Math.floor((xpEarnedInCurrentLevel / 1000) * 100), 100);
+
+    return {
+        xp: totalXp,
+        level: level,
+        xpProgress: xpEarnedInCurrentLevel,
+        xpPercent: xpPercent,
+        bubblesCompleted: totalBubblesCompletedCount,
+        completedCount: completedTasks.length
+    };
+}
+
+/* ===================== RENDER LAYOUT & VIEWS ===================== */
+function render() {
+    renderDashboard();
+    renderAnalytics();
+    renderSettings();
+}
+
+function renderDashboard() {
+    const todayStr = getTodayDateStr();
+    const categories = ['tech', 'piano', 'music'];
+    
+    let totalTasksToday = 0;
+    let completedTasksToday = 0;
+    let completedBubblesToday = 0;
+
+    categories.forEach(cat => {
+        const todayQuests = tasks.filter(t => t.category === cat && t.date === todayStr);
+        const completedQuests = todayQuests.filter(t => t.completed);
+        
+        totalTasksToday += todayQuests.length;
+        completedTasksToday += completedQuests.length;
+
+        // Render Focus & Stats under Bubbles
+        let focusText = 'None';
+        if (cat === 'tech') focusText = questSettings.techFocus;
+        if (cat === 'piano') focusText = questSettings.pianoFocus;
+        if (cat === 'music') focusText = questSettings.musicFocus;
+
+        $(`#focus-${cat}`).textContent = focusText || 'Define Focus';
+        $(`#stats-${cat}`).textContent = `${completedQuests.length}/3 Completed`;
+
+        // Calculate progress ring circle
+        const ring = $(`#ring-${cat}`);
+        const bubbleEl = $(`#bubble-${cat}`);
+        
+        if (ring) {
+            const ratio = todayQuests.length > 0 ? (completedQuests.length / todayQuests.length) : 0;
+            const circumference = 515.22; // 2 * PI * 82
+            const strokeDashoffset = circumference - (ratio * circumference);
+            ring.style.strokeDashoffset = strokeDashoffset;
+        }
+
+        // Completion indicator
+        if (todayQuests.length === 3 && completedQuests.length === 3) {
+            bubbleEl.classList.add('completed');
+            completedBubblesToday++;
+        } else {
+            bubbleEl.classList.remove('completed');
+        }
+    });
+
+    // Update Overall daily stats
+    const progressPercent = totalTasksToday > 0 ? Math.round((completedTasksToday / totalTasksToday) * 100) : 0;
+    $('#overallProgressText').textContent = `${progressPercent}%`;
+    $('#overallProgressBar').style.width = `${progressPercent}%`;
+    $('#dailyQuestsStatus').textContent = `${completedTasksToday} of ${totalTasksToday} Quests Cleared`;
+    $('#dailyBubblesStatus').textContent = `${completedBubblesToday} of 3 Bubbles Completed`;
+}
+
+function renderAnalytics() {
+    const prog = calculateProgression();
+    
+    $('#rpgLevel').textContent = prog.level;
+    $('#rpgXpText').textContent = `${prog.xpProgress} / 1000 XP`;
+    $('#rpgXpPercent').textContent = `${prog.xpPercent}%`;
+    $('#rpgXpBar').style.width = `${prog.xpPercent}%`;
+
+    // Set metrics
+    $('#statTotalCompleted').textContent = prog.completedCount;
+    $('#statTotalBubbles').textContent = prog.bubblesCompleted;
+
+    // Weekly completion rate calculation
+    const weeklyRate = calculateRateForPastDays(7);
+    $('#statWeeklyRate').textContent = `${weeklyRate}%`;
+
+    // Monthly completion rate calculation
+    const monthlyRate = calculateRateForPastDays(30);
+    $('#statMonthlyRate').textContent = `${monthlyRate}%`;
+
+    // Render Weekly Bar Graph
+    renderWeeklyChart();
+
+    // Render Category Balance Graph
+    renderCategoryBalanceChart();
+
+    // Render Recent Completed Quest Logs
+    renderHistoryLog();
+}
+
+function calculateRateForPastDays(daysCount) {
+    const cutoffDate = new Date();
+    cutoffDate.setDate(cutoffDate.getDate() - daysCount);
+    cutoffDate.setHours(0, 0, 0, 0);
+
+    const relevantTasks = tasks.filter(t => {
+        const itemDate = new Date(t.date);
+        return itemDate >= cutoffDate;
+    });
+
+    if (relevantTasks.length === 0) return 0;
+    const completedCount = relevantTasks.filter(t => t.completed).length;
+    return Math.round((completedCount / relevantTasks.length) * 100);
+}
+
+function renderWeeklyChart() {
+    const chartContainer = $('#weeklyChart');
+    if (!chartContainer) return;
+    chartContainer.innerHTML = '';
+
+    const weekdays = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+    
+    // Get last 7 days dates
+    const dates = [];
+    for (let i = 6; i >= 0; i--) {
+        const d = new Date();
+        d.setDate(d.getDate() - i);
+        dates.push({
+            dateStr: d.toLocaleDateString('en-CA'), // YYYY-MM-DD
+            dayLabel: weekdays[d.getDay()]
+        });
+    }
+
+    dates.forEach(dayInfo => {
+        const dayTasks = tasks.filter(t => t.date === dayInfo.dateStr);
+        const completed = dayTasks.filter(t => t.completed).length;
+        const total = dayTasks.length;
+        const pct = total > 0 ? Math.round((completed / total) * 100) : 0;
+
+        const barWrap = document.createElement('div');
+        barWrap.className = 'chart-bar-wrap';
+        
+        barWrap.innerHTML = `
+            <div class="chart-bar" style="height: ${pct}%">
+                <span class="chart-bar-val">${completed}/${total}</span>
+            </div>
+            <span class="chart-label">${dayInfo.dayLabel}</span>
+        `;
+        chartContainer.appendChild(barWrap);
+    });
+}
+
+function renderCategoryBalanceChart() {
+    const chartContainer = $('#categoryBalanceChart');
+    if (!chartContainer) return;
+    chartContainer.innerHTML = '';
+
+    const categories = [
+        { key: 'tech', label: '💻 Tech', color: 'var(--tech-color)' },
+        { key: 'piano', label: '🎹 Piano', color: 'var(--piano-color)' },
+        { key: 'music', label: '🎛️ Music Production', color: 'var(--music-color)' }
+    ];
+
+    categories.forEach(cat => {
+        const catQuests = tasks.filter(t => t.category === cat.key);
+        const completed = catQuests.filter(t => t.completed).length;
+        const total = catQuests.length;
+        const pct = total > 0 ? Math.round((completed / total) * 100) : 0;
+
+        const row = document.createElement('div');
+        row.className = `balance-row ${cat.key}-row`;
+        
+        row.innerHTML = `
+            <div class="balance-info">
+                <span>${cat.label}</span>
+                <span>${completed}/${total} (${pct}%)</span>
+            </div>
+            <div class="balance-track">
+                <div class="balance-fill" style="width: ${pct}%; background-color: ${cat.color}"></div>
+            </div>
+        `;
+        chartContainer.appendChild(row);
+    });
+}
+
+function renderHistoryLog() {
+    const logContainer = $('#historyLog');
+    if (!logContainer) return;
+    logContainer.innerHTML = '';
+
+    const completedQuests = tasks
+        .filter(t => t.completed)
+        .sort((a, b) => new Date(b.completedAt) - new Date(a.completedAt))
+        .slice(0, 15);
+
+    if (completedQuests.length === 0) {
+        logContainer.innerHTML = '<p class="empty-state">No completed quests logged yet. Go crush today\'s tasks!</p>';
         return;
     }
-    
-    container.innerHTML = dayData.blocks.map((block, idx) => `
-        <div class="task-item" style="border-left: 3px solid var(--accent); margin-bottom: 0.5rem; background: var(--bg-secondary); padding: 0.6rem 0.8rem; border-radius: 8px; display: flex; justify-content: space-between; align-items: center;">
-            <div class="task-content">
-                <div class="task-time" style="color: var(--accent); font-weight: 600; font-size: 0.85rem;">⏰ ${block.time}</div>
-                <div class="task-title" style="font-weight: 600; margin-top: 0.1rem; font-size: 0.95rem;">${block.title}</div>
-                ${block.description ? `<p style="font-size: 0.8rem; color: var(--text-light); margin-top: 0.1rem;">${block.description}</p>` : ''}
+
+    completedQuests.forEach(t => {
+        const item = document.createElement('div');
+        item.className = 'history-item';
+        
+        const dateString = new Date(t.completedAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) + ' on ' + t.date;
+        const categoryBadgeText = t.category === 'music' ? 'Music Prod' : t.category;
+
+        item.innerHTML = `
+            <div class="history-details">
+                <span class="history-title">${t.title}</span>
+                <span class="history-meta">${dateString} ${t.notes ? `| Notes: "${t.notes}"` : ''}</span>
             </div>
-            <div class="task-actions" style="display: flex; gap: 0.3rem;">
-                <button class="task-btn edit" onclick="editTemplateBlock(${idx})">✏️</button>
-                <button class="task-btn delete" onclick="deleteTemplateBlock(${idx})">🗑️</button>
-            </div>
-        </div>
-    `).join('');
+            <span class="history-badge ${t.category}">${categoryBadgeText}</span>
+        `;
+        logContainer.appendChild(item);
+    });
 }
 
-// Edit a template block
-window.editTemplateBlock = function(idx) {
-    const day = parseInt($('#templateDaySelect').value);
-    const block = weeklySchedule[day].blocks[idx];
-    if (block) {
-        editingTemplateBlockIdx = idx;
-        $('#templateTime').value = block.time;
-        $('#templateTitle').value = block.title;
-        $('#templateDesc').value = block.description || '';
-        
-        $('#templateFormTitle').textContent = 'Edit Block';
-        $('#templateSaveBlockBtn').textContent = 'Update Block';
-        $('#templateCancelEditBtn').style.display = 'block';
-    }
-};
+function renderSettings() {
+    // Handled on load/saving mostly.
+}
 
-// Delete a template block
-window.deleteTemplateBlock = function(idx) {
-    if (confirm('Are you sure you want to delete this template block?')) {
-        const day = parseInt($('#templateDaySelect').value);
-        weeklySchedule[day].blocks.splice(idx, 1);
-        renderTemplateBlocksList();
-    }
-};
+function populateSettingsFields() {
+    $('#techGoals').value = questSettings.techGoals || '';
+    $('#techLevel').value = questSettings.techLevel || 'Beginner';
+    $('#techFocus').value = questSettings.techFocus || '';
 
-// Form submit to add or update a block
-$('#templateBlockForm').addEventListener('submit', (e) => {
-    e.preventDefault();
-    const day = parseInt($('#templateDaySelect').value);
-    const time = $('#templateTime').value.trim();
-    const title = $('#templateTitle').value.trim();
-    const description = $('#templateDesc').value.trim();
+    $('#pianoGoals').value = questSettings.pianoGoals || '';
+    $('#pianoLevel').value = questSettings.pianoLevel || 'Beginner';
+    $('#pianoFocus').value = questSettings.pianoFocus || '';
+
+    $('#musicGoals').value = questSettings.musicGoals || '';
+    $('#musicLevel').value = questSettings.musicLevel || 'Beginner';
+    $('#musicFocus').value = questSettings.musicFocus || '';
+
+    // Load key if exists
+    const key = localStorage.getItem('lifesystem_gemini_api_key') || '';
+    $('#settingsApiKey').value = key;
+}
+
+/* ===================== EXPANDED BUBBLE DETAIL VIEW ===================== */
+function openQuestModal(category) {
+    activeCategory = category;
+    const todayStr = getTodayDateStr();
     
-    const blockData = { time, title, description };
-    
-    if (!weeklySchedule[day]) {
-        weeklySchedule[day] = { blocks: [] };
+    // Configure header based on category
+    let title = 'Tech Quests';
+    let icon = '💻';
+    let focus = questSettings.techFocus;
+
+    if (category === 'piano') {
+        title = 'Piano Quests';
+        icon = '🎹';
+        focus = questSettings.pianoFocus;
+    } else if (category === 'music') {
+        title = 'Music Production Quests';
+        icon = '🎛️';
+        focus = questSettings.musicFocus;
     }
-    
-    if (editingTemplateBlockIdx !== null) {
-        // Update block
-        weeklySchedule[day].blocks[editingTemplateBlockIdx] = blockData;
-        editingTemplateBlockIdx = null;
-        $('#templateCancelEditBtn').style.display = 'none';
-        $('#templateFormTitle').textContent = 'Add New Block';
-        $('#templateSaveBlockBtn').textContent = 'Add to Template';
+
+    $('#questModalTitle').textContent = title;
+    $('#questModalIcon').textContent = icon;
+    $('#questModalFocus').textContent = focus || 'None';
+    $('#questModalDate').textContent = `TODAY: ${new Date().toLocaleDateString(undefined, { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}`;
+
+    // Filter quests
+    const todayQuests = tasks.filter(t => t.category === category && t.date === todayStr);
+
+    // Render quest list items
+    const listContainer = $('#questsList');
+    listContainer.innerHTML = '';
+
+    if (todayQuests.length === 0) {
+        listContainer.innerHTML = '<p class="empty-state">No quests loaded. Generate below to start!</p>';
+        $('#categoryCompleteBanner').style.display = 'none';
     } else {
-        // Add new block
-        weeklySchedule[day].blocks.push(blockData);
+        todayQuests.forEach((quest, index) => {
+            const item = document.createElement('div');
+            item.className = `quest-item ${quest.completed ? 'completed' : ''}`;
+            
+            item.innerHTML = `
+                <div class="quest-main-row">
+                    <label class="quest-checkbox-label ${quest.completed ? 'line-through' : ''}">
+                        <input type="checkbox" class="quest-checkbox" data-id="${quest.id}" ${quest.completed ? 'checked' : ''}>
+                        <span class="checkmark"></span>
+                        ${quest.title}
+                    </label>
+                    <button class="quest-notes-toggle" data-id="${quest.id}">📝 Notes</button>
+                </div>
+                <div class="quest-notes-area" id="notes-area-${quest.id}" style="${quest.notes ? '' : 'display: none;'}">
+                    <textarea class="quest-notes-input" placeholder="Type a note about what you accomplished..." data-id="${quest.id}">${quest.notes || ''}</textarea>
+                    ${quest.completedAt ? `<span class="quest-completed-timestamp">Done at ${new Date(quest.completedAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>` : ''}
+                </div>
+            `;
+            listContainer.appendChild(item);
+        });
+
+        // Check category completion banner status
+        const isDone = todayQuests.every(q => q.completed);
+        const banner = $('#categoryCompleteBanner');
+        if (isDone && todayQuests.length === 3) {
+            $('#categoryCompleteTitle').textContent = `✅ Daily ${category === 'music' ? 'Music Prod' : category.charAt(0).toUpperCase() + category.slice(1)} Quest Complete!`;
+            banner.style.display = 'flex';
+        } else {
+            banner.style.display = 'none';
+        }
     }
-    
-    $('#templateBlockForm').reset();
-    renderTemplateBlocksList();
-});
 
-// Save all changes to cloud
-$('#templateSaveAllBtn').addEventListener('click', async () => {
-    const btn = $('#templateSaveAllBtn');
-    btn.disabled = true;
-    btn.textContent = 'Saving to Cloud...';
-    
-    await saveWeeklySchedule();
-    
-    btn.disabled = false;
-    btn.textContent = '💾 Save Template & Close';
-    closeTemplateEditor();
+    // Hide manual edit form if it was open
+    $('#manualEditForm').style.display = 'none';
+
+    // Show modal
+    $('#questModal').classList.add('active');
+}
+
+function closeQuestModal() {
+    $('#questModal').classList.remove('active');
+    activeCategory = null;
     render();
-});
+}
 
-/* ===================== WINDOW GLOBAL SCOPE BINDINGS ===================== */
-window.toggleScheduleItem = toggleScheduleItem;
-window.openDayView = openDayView;
-window.switchToWeekView = switchToWeekView;
-window.deleteTaskAndRender = deleteTaskAndRender;
-window.editTask = editTask;
+/* ===================== MOTIVATION POPUP SYSTEM ===================== */
+function checkDailyQuotePopup() {
+    const lastQuoteStr = localStorage.getItem('lifesystem_last_quote_date');
+    const todayStr = getTodayDateStr();
 
-/* ===================== INITIALIZATION ===================== */
+    if (lastQuoteStr !== todayStr) {
+        // First load of the day, show motivational quotes
+        const randomIndex = Math.floor(Math.random() * MOTIVATIONAL_QUOTES.length);
+        const quote = MOTIVATIONAL_QUOTES[randomIndex];
+
+        $('#quoteText').textContent = `"${quote.text}"`;
+        $('#quoteAuthor').textContent = `— ${quote.author}`;
+        $('#quoteModal').classList.add('active');
+
+        localStorage.setItem('lifesystem_last_quote_date', todayStr);
+    }
+}
+
+/* ===================== ONBOARDING SYSTEM ===================== */
+function showOnboarding() {
+    $('#onboardingModal').classList.add('active');
+}
+
+/* ===================== UTILITY FUNCTIONS ===================== */
+function getTodayDateStr() {
+    return new Date().toLocaleDateString('en-CA'); // Outputs YYYY-MM-DD local
+}
+
+/* ===================== EVENT HANDLERS & BINDINGS ===================== */
 document.addEventListener('DOMContentLoaded', async () => {
+    // 1. Initialise Auth and Firebase
     await initializeFirebase();
-    initTheme();
     initAuth();
+
+    // 2. Tab Navigation
+    $$('.nav-btn').forEach(btn => {
+        btn.addEventListener('click', (e) => {
+            const targetTab = e.target.getAttribute('data-tab');
+            if (!targetTab) return;
+
+            // Update tab button classes
+            $$('.nav-btn').forEach(b => b.classList.remove('active'));
+            e.target.classList.add('active');
+
+            // Toggle active views
+            $$('.tab-view').forEach(view => view.classList.remove('active'));
+            $(`#${targetTab}View`).classList.add('active');
+            
+            activeTab = targetTab;
+            render();
+        });
+    });
+
+    // 3. Interactive Skill Bubbles click handler
+    $$('.skill-bubble').forEach(bubble => {
+        bubble.addEventListener('click', () => {
+            const category = bubble.getAttribute('data-category');
+            openQuestModal(category);
+        });
+    });
+
+    // 4. Modal Close events
+    $('#closeQuestModalBtn').addEventListener('click', closeQuestModal);
+    $('#questModal').addEventListener('click', (e) => {
+        if (e.target === $('#questModal')) closeQuestModal();
+    });
+
+    // 5. Quest Completed Checkbox Toggle
+    $('#questsList').addEventListener('change', async (e) => {
+        if (e.target.classList.contains('quest-checkbox')) {
+            const id = e.target.getAttribute('data-id');
+            const checked = e.target.checked;
+            
+            const quest = tasks.find(t => t.id === id);
+            if (quest) {
+                quest.completed = checked;
+                quest.completedAt = checked ? new Date().toISOString() : null;
+                
+                await saveQuests();
+                
+                // Redraw Quest list to trigger completion status
+                openQuestModal(activeCategory);
+                render();
+            }
+        }
+    });
+
+    // 6. Toggle Notes Textareas
+    $('#questsList').addEventListener('click', (e) => {
+        if (e.target.classList.contains('quest-notes-toggle')) {
+            const id = e.target.getAttribute('data-id');
+            const notesArea = $(`#notes-area-${id}`);
+            if (notesArea) {
+                notesArea.style.display = notesArea.style.display === 'none' ? 'block' : 'none';
+            }
+        }
+    });
+
+    // 7. Save Quest Notes on change
+    $('#questsList').addEventListener('input', async (e) => {
+        if (e.target.classList.contains('quest-notes-input')) {
+            const id = e.target.getAttribute('data-id');
+            const text = e.target.value;
+            
+            const quest = tasks.find(t => t.id === id);
+            if (quest) {
+                quest.notes = text;
+                // Defer saving notes until blur or timeout to prevent excessive database calling
+            }
+        }
+    });
+
+    $('#questsList').addEventListener('focusout', async (e) => {
+        if (e.target.classList.contains('quest-notes-input')) {
+            await saveQuests();
+        }
+    });
+
+    // 8. Regenerate Quests through AI
+    $('#aiRegenerateBtn').addEventListener('click', async () => {
+        if (activeCategory) {
+            await generateDailyQuests(activeCategory, true);
+        }
+    });
+
+    // 9. Manual Quests Edit Trigger
+    $('#manualEditBtn').addEventListener('click', () => {
+        const todayStr = getTodayDateStr();
+        const todayQuests = tasks.filter(t => t.category === activeCategory && t.date === todayStr);
+
+        $('#manualQuest0').value = todayQuests[0]?.title || '';
+        $('#manualQuest1').value = todayQuests[1]?.title || '';
+        $('#manualQuest2').value = todayQuests[2]?.title || '';
+
+        $('#manualEditForm').style.display = 'block';
+    });
+
+    $('#cancelManualQuestsBtn').addEventListener('click', () => {
+        $('#manualEditForm').style.display = 'none';
+    });
+
+    $('#saveManualQuestsBtn').addEventListener('click', async () => {
+        const todayStr = getTodayDateStr();
+        const q0 = $('#manualQuest0').value.trim();
+        const q1 = $('#manualQuest1').value.trim();
+        const q2 = $('#manualQuest2').value.trim();
+
+        if (!q0 || !q1 || !q2) {
+            alert('Please fill out all 3 quests.');
+            return;
+        }
+
+        // Clean out and rewrite
+        tasks = tasks.filter(t => !(t.category === activeCategory && t.date === todayStr));
+        
+        const inputQuests = [q0, q1, q2];
+        inputQuests.forEach(title => {
+            tasks.push({
+                id: (Date.now() + Math.random()).toString(),
+                category: activeCategory,
+                title: title,
+                completed: false,
+                completedAt: null,
+                notes: '',
+                date: todayStr
+            });
+        });
+
+        await saveQuests();
+        $('#manualEditForm').style.display = 'none';
+        openQuestModal(activeCategory);
+        render();
+    });
+
+    // 10. Save Settings Form
+    $('#settingsForm').addEventListener('submit', async (e) => {
+        e.preventDefault();
+        
+        questSettings.techGoals = $('#techGoals').value.trim();
+        questSettings.techLevel = $('#techLevel').value;
+        questSettings.techFocus = $('#techFocus').value.trim();
+
+        questSettings.pianoGoals = $('#pianoGoals').value.trim();
+        questSettings.pianoLevel = $('#pianoLevel').value;
+        questSettings.pianoFocus = $('#pianoFocus').value.trim();
+
+        questSettings.musicGoals = $('#musicGoals').value.trim();
+        questSettings.musicLevel = $('#musicLevel').value;
+        questSettings.musicFocus = $('#musicFocus').value.trim();
+
+        await saveQuestSettings();
+        alert('Configuration saved successfully!');
+        render();
+    });
+
+    // 11. Save API Key separately
+    $('#saveApiKeyBtn').addEventListener('click', () => {
+        const key = $('#settingsApiKey').value.trim();
+        localStorage.setItem('lifesystem_gemini_api_key', key);
+        alert('API Key updated successfully!');
+    });
+
+    // 12. Trigger Login/Signup Modal
+    $('#triggerAuthModalBtn').addEventListener('click', () => {
+        showAuthModal();
+    });
+
+    // 13. Motivational Quote modal close
+    $('#closeQuoteBtn').addEventListener('click', () => {
+        $('#quoteModal').classList.remove('active');
+    });
+    $('#quoteAcknowledgeBtn').addEventListener('click', () => {
+        $('#quoteModal').classList.remove('active');
+    });
+
+    // 14. Onboarding modal close & triggers
+    $('#onboardingSetupBtn').addEventListener('click', () => {
+        const key = $('#onboardingApiKey').value.trim();
+        if (key) {
+            localStorage.setItem('lifesystem_gemini_api_key', key);
+            $('#settingsApiKey').value = key;
+        }
+        $('#onboardingModal').classList.remove('active');
+        // Switch to settings tab automatically
+        $$('.nav-btn').forEach(b => b.classList.remove('active'));
+        $('[data-tab="settings"]').classList.add('active');
+        $$('.tab-view').forEach(view => view.classList.remove('active'));
+        $('#settingsView').classList.add('active');
+        activeTab = 'settings';
+    });
+
+    $('#onboardingGuestBtn').addEventListener('click', () => {
+        $('#onboardingModal').classList.remove('active');
+        // Just render default
+        render();
+    });
 });

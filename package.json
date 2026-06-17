@@ -8,7 +8,7 @@
   },
   "devDependencies": {},
   "scripts": {
-    "dev": "python -m http.server 8000",
+    "dev": "node server.js",
     "build": "echo 'No build needed - static site'",
     "deploy": "vercel"
   },

@@ -8,7 +8,13 @@ let currentUserId = 'anonymous_user';
 let useFirebase = false;
 let isGuestModeActive = false;
 
-let tasks = []; // Array of quests: { id, category, title, completed, completedAt, notes, date }
+// Core data models
+let tasks = []; // Array of quests: { id, category, title, status ('pending'|'in_progress'|'completed'|'skipped'|'carried_forward'), date, completedAt, notes, parentTaskId }
+let projects = []; // Array of active projects: { id, name, category, status ('active'|'archived'), currentStage, nextMilestone }
+let suggestions = { date: '', tech: [], piano: [], music: [] }; // Today's AI Suggestions
+let chatHistory = []; // Conversation history: { role: 'user'|'assistant', text, timestamp }
+let narrativeProfile = { profileText: 'No behavioral patterns analyzed yet. Keep completing quests to build your profile, then run the weekly reflection job.', lastUpdated: 'Never' };
+
 let questSettings = {
     techGoals: 'Learn React, Build projects, Practice DSA',
     techLevel: 'Beginner',
@@ -18,64 +24,67 @@ let questSettings = {
     pianoFocus: 'Sight Reading',
     musicGoals: 'Learn Ableton, Improve mixing, Finish tracks',
     musicLevel: 'Beginner',
-    musicFocus: 'Ableton Workflow'
+    musicFocus: 'Ableton Workflow',
+    onboardingCompleted: false
 };
 
 let activeTab = 'dashboard';
 let activeCategory = null;
+let modalSubTab = 'quests'; // 'quests' or 'suggestions'
 let isGeneratingQuests = false;
+let isProcessingChat = false;
 
 /* ===================== DEFAULT QUESTS FALLBACK ===================== */
 const DEFAULT_QUESTS = {
     tech: {
         Beginner: [
-            'Read 10 pages of a basic programming tutorial',
-            'Write a simple Hello World program in a new language',
-            'Watch an intro coding video for 20 minutes'
+            'Watch React Lesson 12',
+            'Build Login Component UI',
+            'Read 5 pages of React Documentation'
         ],
         Intermediate: [
-            'Build a simple form component with validation',
+            'Build a simple React form with hooks',
             'Solve one LeetCode medium coding problem',
-            'Read a technical blog post about database design'
+            'Outline a Django model structure for a blog app'
         ],
         Advanced: [
-            'Refactor a bottleneck function in one of your projects',
-            'Review open issues on your favorite GitHub repository',
-            'Sketch out a system architecture diagram for a new app idea'
+            'Refactor state management in your current project',
+            'Debug an open-source issue on GitHub',
+            'Write unit tests for a utility service'
         ]
     },
     piano: {
         Beginner: [
-            'Practice C Major scale slowly for 15 minutes',
-            'Learn the notes of the first 4 bars of a simple melody',
-            'Sight-read 5 lines of beginner sheet music'
+            'Practice Scales for 15 Minutes',
+            'Learn 8 New Bars of a simple piece',
+            'Sight read 1 Page of easy music'
         ],
         Intermediate: [
-            'Practice major and minor scales in 3 different keys',
-            'Learn 8 new bars of your current repertoire pieces',
-            'Sight-read 1 page of an intermediate piece'
+            'Practice scales and arpeggios in G and D Major',
+            'Learn 12 new bars of a classical piece',
+            'Sight read 2 pages of intermediate sheet music'
         ],
         Advanced: [
-            'Work on a challenging section of your repertoire for 30 minutes',
-            'Improvise over a jazz chord progression for 15 minutes',
-            'Sight-read 2 pages of a complex piece'
+            'Refine phrasing in a complex section for 30 minutes',
+            'Improvise over a standard 12-bar blues in 3 keys',
+            'Sight read a challenging romantic piece'
         ]
     },
     music: {
         Beginner: [
-            'Watch a 15-minute video tutorial on your DAW interface',
-            'Create a simple 4-bar drum pattern in your DAW',
-            'Load a synthesizer preset and experiment with filter controls'
+            'Complete Ableton Lesson on automation',
+            'Recreate a simple drum pattern',
+            'Analyze a song arrangement of a pop track'
         ],
         Intermediate: [
-            'Recreate a drum groove from a track you enjoy',
-            'Analyze the arrangement/sections of a popular song',
-            'Balance the levels and panning of a 4-track project'
+            'Recreate a complex reference track drum beat',
+            'Practice EQ and compression balance in a current mix',
+            'Complete a lesson on advanced delay mapping'
         ],
         Advanced: [
-            'Spend 45 minutes designing custom presets or synth patches',
-            'Apply advanced serial/parallel compression to a vocal track',
-            'Finalize the arrangement structure of a project in progress'
+            'Design a custom synth patch from scratch',
+            'Apply parallel compression to vocals in your active track',
+            'Spend 45 minutes structuring arrangement of a project'
         ]
     }
 };
@@ -90,9 +99,7 @@ const MOTIVATIONAL_QUOTES = [
     { text: "Small daily improvements over time lead to stunning results.", author: "Robin Sharma" },
     { text: "Continuous improvement is better than delayed perfection.", author: "Mark Twain" },
     { text: "A journey of a thousand miles begins with a single step.", author: "Lao Tzu" },
-    { text: "It does not matter how slowly you go as long as you do not stop.", author: "Confucius" },
-    { text: "Success is the sum of small efforts, repeated day in and day out.", author: "Robert Collier" },
-    { text: "Great things are done by a series of small things brought together.", author: "Vincent van Gogh" }
+    { text: "It does not matter how slowly you go as long as you do not stop.", author: "Confucius" }
 ];
 
 /* ===================== FIREBASE INITIALIZATION ===================== */
@@ -130,43 +137,66 @@ function updateSyncBadge(status, synced) {
     }
 }
 
-/* ===================== PERSISTENCE OPERATIONS ===================== */
+/* ===================== DATA LOAD/SAVE MANAGEMENT ===================== */
 async function loadData() {
     toggleLoading(true);
     try {
         if (useFirebase && db) {
-            // 1. Load Quests (Legacy Tasks collection)
+            // 1. Load Quests/Tasks
             const tasksSnapshot = await db.collection('users').doc(currentUserId).collection('tasks').get();
             tasks = tasksSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
 
-            // 2. Load Quest Settings
+            // 2. Load Active Projects
+            const projectsSnapshot = await db.collection('users').doc(currentUserId).collection('projects').get();
+            projects = projectsSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+
+            // 3. Load Quest Settings
             const settingsDoc = await db.collection('users').doc(currentUserId).collection('data').doc('questSettings').get();
             if (settingsDoc.exists) {
                 questSettings = { ...questSettings, ...settingsDoc.data() };
-            } else {
-                // First-time user: prompt settings setup
-                showOnboarding();
             }
+
+            // 4. Load AI Suggestions
+            const suggestionsDoc = await db.collection('users').doc(currentUserId).collection('data').doc('suggestions').get();
+            if (suggestionsDoc.exists) {
+                suggestions = { ...suggestions, ...suggestionsDoc.data() };
+            }
+
+            // 5. Load Narrative Profile
+            const profileDoc = await db.collection('users').doc(currentUserId).collection('data').doc('narrativeProfile').get();
+            if (profileDoc.exists) {
+                narrativeProfile = { ...narrativeProfile, ...profileDoc.data() };
+            }
+
+            // 6. Load Chat History
+            const chatDoc = await db.collection('users').doc(currentUserId).collection('data').doc('chatHistory').get();
+            if (chatDoc.exists) {
+                chatHistory = chatDoc.data().messages || [];
+            }
+            
             updateSyncBadge('Synced', true);
         } else {
             // Load LocalStorage Fallback
-            const storedTasks = localStorage.getItem('lifesystem_quests');
-            tasks = storedTasks ? JSON.parse(storedTasks) : [];
+            tasks = JSON.parse(localStorage.getItem('lifesystem_quests')) || [];
+            projects = JSON.parse(localStorage.getItem('lifesystem_projects')) || [];
+            questSettings = JSON.parse(localStorage.getItem('lifesystem_quest_settings')) || questSettings;
+            suggestions = JSON.parse(localStorage.getItem('lifesystem_suggestions')) || { date: '', tech: [], piano: [], music: [] };
+            narrativeProfile = JSON.parse(localStorage.getItem('lifesystem_narrative_profile')) || narrativeProfile;
+            chatHistory = JSON.parse(localStorage.getItem('lifesystem_chat_history')) || [];
             
-            const storedSettings = localStorage.getItem('lifesystem_quest_settings');
-            if (storedSettings) {
-                questSettings = { ...questSettings, ...JSON.parse(storedSettings) };
-            } else {
-                showOnboarding();
-            }
             updateSyncBadge('Local Storage', false);
         }
 
-        // Apply loaded settings to form controls
+        // Apply settings to form inputs
         populateSettingsFields();
 
-        // Check date and auto-generate today's quests if needed
-        await checkDailyQuestReset();
+        // Check if day changed & suggestions need refresh
+        await checkDailySuggestionsReset();
+
+        // Trigger onboarding modal if not completed
+        if (!questSettings.onboardingCompleted) {
+            showOnboarding();
+        }
 
     } catch (error) {
         console.error('Error loading data:', error);
@@ -177,32 +207,75 @@ async function loadData() {
 
 async function saveQuests() {
     try {
+        localStorage.setItem('lifesystem_quests', JSON.stringify(tasks));
         if (useFirebase && db) {
-            localStorage.setItem('lifesystem_quests', JSON.stringify(tasks));
-            // Firestore write in batch or set individually
+            // Perform batch write or individual writes
             await Promise.all(tasks.map(t => {
                 const { id, ...data } = t;
                 return db.collection('users').doc(currentUserId).collection('tasks').doc(id).set(data);
             }));
-        } else {
-            localStorage.setItem('lifesystem_quests', JSON.stringify(tasks));
         }
     } catch (error) {
         console.error('Error saving quests:', error);
     }
 }
 
+async function saveProjects() {
+    try {
+        localStorage.setItem('lifesystem_projects', JSON.stringify(projects));
+        if (useFirebase && db) {
+            // Sync all active projects
+            await Promise.all(projects.map(p => {
+                const { id, ...data } = p;
+                return db.collection('users').doc(currentUserId).collection('projects').doc(id).set(data);
+            }));
+        }
+    } catch (error) {
+        console.error('Error saving projects:', error);
+    }
+}
+
 async function saveQuestSettings() {
     try {
+        localStorage.setItem('lifesystem_quest_settings', JSON.stringify(questSettings));
         if (useFirebase && db) {
-            localStorage.setItem('lifesystem_quest_settings', JSON.stringify(questSettings));
             await db.collection('users').doc(currentUserId).collection('data').doc('questSettings').set(questSettings);
-            updateSyncBadge('Synced', true);
-        } else {
-            localStorage.setItem('lifesystem_quest_settings', JSON.stringify(questSettings));
         }
     } catch (error) {
         console.error('Error saving settings:', error);
+    }
+}
+
+async function saveSuggestions() {
+    try {
+        localStorage.setItem('lifesystem_suggestions', JSON.stringify(suggestions));
+        if (useFirebase && db) {
+            await db.collection('users').doc(currentUserId).collection('data').doc('suggestions').set(suggestions);
+        }
+    } catch (error) {
+        console.error('Error saving suggestions:', error);
+    }
+}
+
+async function saveNarrativeProfile() {
+    try {
+        localStorage.setItem('lifesystem_narrative_profile', JSON.stringify(narrativeProfile));
+        if (useFirebase && db) {
+            await db.collection('users').doc(currentUserId).collection('data').doc('narrativeProfile').set(narrativeProfile);
+        }
+    } catch (error) {
+        console.error('Error saving profile:', error);
+    }
+}
+
+async function saveChatHistory() {
+    try {
+        localStorage.setItem('lifesystem_chat_history', JSON.stringify(chatHistory));
+        if (useFirebase && db) {
+            await db.collection('users').doc(currentUserId).collection('data').doc('chatHistory').set({ messages: chatHistory });
+        }
+    } catch (error) {
+        console.error('Error saving chat history:', error);
     }
 }
 
@@ -259,7 +332,7 @@ function initAuth() {
         }
     });
 
-    // Form submission
+    // Form sign in
     $('#authForm').addEventListener('submit', async (e) => {
         e.preventDefault();
         const username = $('#authUsername').value.trim().toLowerCase();
@@ -267,7 +340,6 @@ function initAuth() {
         const errorEl = $('#authError');
         
         errorEl.style.display = 'none';
-        errorEl.textContent = '';
         
         const email = `${username}@lifescheduler.local`;
         const submitBtn = $('#authSubmitBtn');
@@ -289,7 +361,7 @@ function initAuth() {
         }
     });
 
-    // Toggle between Login and Signup
+    // Toggle Link (Login <-> Signup)
     $('#authToggleLink').addEventListener('click', () => {
         const errorEl = $('#authError');
         errorEl.style.display = 'none';
@@ -311,7 +383,16 @@ function initAuth() {
         }
     });
 
-    // Sign Out
+    // Guest Bypass
+    $('#authGuestBtn').addEventListener('click', () => {
+        isGuestModeActive = true;
+        useFirebase = false;
+        $('#authModal').classList.remove('active');
+        updateSyncBadge('Local Storage', false);
+        loadData().then(() => render());
+    });
+
+    // Sign out trigger
     $('#signOutBtn').addEventListener('click', async () => {
         try {
             isGuestModeActive = false;
@@ -319,15 +400,6 @@ function initAuth() {
         } catch (error) {
             console.error('Error signing out:', error);
         }
-    });
-
-    // Offline / Guest Mode Bypassing
-    $('#authGuestBtn').addEventListener('click', () => {
-        isGuestModeActive = true;
-        useFirebase = false;
-        $('#authModal').classList.remove('active');
-        updateSyncBadge('Local Storage', false);
-        loadData().then(() => render());
     });
 }
 
@@ -338,97 +410,279 @@ function showAuthModal() {
     authMode = 'login';
 }
 
-/* ===================== GEMINI AI QUEST GENERATION ===================== */
-async function generateDailyQuests(category, force = false) {
+/* ===================== LAYER 1: STRUCTURED STATISTICS ENGINE ===================== */
+function calculateLayer1Stats() {
+    const completedTasks = tasks.filter(t => t.status === 'completed');
+    const skippedTasks = tasks.filter(t => t.status === 'skipped');
+    
+    // Streaks calculation (days with at least 1 completed task)
+    let streakCount = 0;
+    const completedDates = new Set(completedTasks.map(t => t.date));
+    const checkDate = new Date();
+    
+    // Check backwards
+    while (true) {
+        const dateStr = checkDate.toLocaleDateString('en-CA');
+        if (completedDates.has(dateStr)) {
+            streakCount++;
+            checkDate.setDate(checkDate.getDate() - 1);
+        } else {
+            // Check if yesterday had it (to allow keeping streak active today)
+            const todayStr = new Date().toLocaleDateString('en-CA');
+            if (dateStr === todayStr) {
+                checkDate.setDate(checkDate.getDate() - 1); // skip today check and continue to yesterday
+            } else {
+                break;
+            }
+        }
+    }
+
+    // Category completion stats
+    const totalTech = tasks.filter(t => t.category === 'tech').length;
+    const completedTech = tasks.filter(t => t.category === 'tech' && t.status === 'completed').length;
+    const techRate = totalTech > 0 ? Math.round((completedTech / totalTech) * 100) : 0;
+
+    const totalPiano = tasks.filter(t => t.category === 'piano').length;
+    const completedPiano = tasks.filter(t => t.category === 'piano' && t.status === 'completed').length;
+    const pianoRate = totalPiano > 0 ? Math.round((completedPiano / totalPiano) * 100) : 0;
+
+    const totalMusic = tasks.filter(t => t.category === 'music').length;
+    const completedMusic = tasks.filter(t => t.category === 'music' && t.status === 'completed').length;
+    const musicRate = totalMusic > 0 ? Math.round((completedMusic / totalMusic) * 100) : 0;
+
+    // Completed / Skipped last 30 days
+    const cutoff30 = new Date();
+    cutoff30.setDate(cutoff30.getDate() - 30);
+    const dateLimitStr = cutoff30.toLocaleDateString('en-CA');
+
+    const completed30 = completedTasks.filter(t => t.date >= dateLimitStr).length;
+    const skipped30 = skippedTasks.filter(t => t.date >= dateLimitStr).length;
+
+    // Top topics based on simple word count parsing of titles
+    const findFavTopic = (taskList) => {
+        if (taskList.length === 0) return 'None yet';
+        const counts = {};
+        const ignoreList = ['and', 'the', 'for', 'with', 'your', 'about', 'lesson', 'practice', 'read', 'learn', 'minutes', 'page', 'bars', 'study', 'build', 'complete'];
+        
+        taskList.forEach(t => {
+            const words = t.title.toLowerCase().replace(/[^a-zA-Z0-9\s]/g, '').split(/\s+/);
+            words.forEach(w => {
+                if (w.length > 2 && !ignoreList.includes(w)) {
+                    counts[w] = (counts[w] || 0) + 1;
+                }
+            });
+        });
+        
+        const sorted = Object.entries(counts).sort((a, b) => b[1] - a[1]);
+        return sorted.length > 0 ? sorted[0][0].charAt(0).toUpperCase() + sorted[0][0].slice(1) : 'General';
+    };
+
+    return {
+        techRate,
+        pianoRate,
+        musicRate,
+        streak: streakCount,
+        completed30,
+        skipped30,
+        favTopic: findFavTopic(completedTasks),
+        skippedTopic: findFavTopic(skippedTasks)
+    };
+}
+
+/* ===================== LAYER 2: NARRATIVE PROFILE / WEEKLY REFLECTION JOB ===================== */
+async function runWeeklyReflectionJob() {
+    const apiKey = localStorage.getItem('lifesystem_gemini_api_key');
+    if (!apiKey) {
+        alert('Please save your Gemini API Key in Settings to run the reflection coach analysis!');
+        return;
+    }
+
+    toggleLoading(true);
+    try {
+        const stats = calculateLayer1Stats();
+        
+        // Fetch tasks of past 30 days
+        const cutoff30 = new Date();
+        cutoff30.setDate(cutoff30.getDate() - 30);
+        const limitStr = cutoff30.toLocaleDateString('en-CA');
+        const tasks30Days = tasks.filter(t => t.date >= limitStr);
+
+        const summaryData = tasks30Days.map(t => `- [${t.category.toUpperCase()}] "${t.title}" -> status: ${t.status} ${t.notes ? `(notes: ${t.notes})` : ''}`).join('\n');
+
+        const systemPrompt = `
+        You are the AI Reflection Architect for the Bubble Quest gamified RPG operating system.
+        Your job is to analyze the user's logged progress history from the last 30 days and write a new "Narrative Profile".
+        
+        Write a short, compact, analytical, and highly personalized paragraph (maximum 4 sentences) describing the user's habits, learning style, favorite subjects, skipped topics, and task duration preferences.
+        Do not output list items, timeline logs, or dates. Rebuild a fresh stable profile summary.
+        Refer to the user in third person or address them directly. Be constructive and specific.
+        
+        CRITICAL RULE: Observed behavior outweighs stated intentions. If the user stated during onboarding that they want to focus on X, but they consistently complete tasks in Y, adapt the profile to highlight Y. Strive to describe who they are becoming based on their actual completed actions.
+        
+        Example Output:
+        "Remo consistently completes hands-on coding tasks and prefers practical project work over theory. Piano practice is most successful when tasks are short and measurable. Music production engagement increases when tasks involve creativity rather than technical study. Tasks longer than 45 minutes are often postponed."
+        `;
+
+        const promptText = `
+        Recent 30-Day Logs:
+        ${summaryData || 'No logged activities.'}
+        
+        Layer 1 Statistics:
+        - Tech Rate: ${stats.techRate}%
+        - Piano Rate: ${stats.pianoRate}%
+        - Music Rate: ${stats.musicRate}%
+        - Top Completed Subject: ${stats.favTopic}
+        - Top Skipped Subject: ${stats.skippedTopic}
+        `;
+
+        const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${apiKey}`;
+        
+        const response = await fetch(url, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                contents: [{ parts: [{ text: promptText }] }],
+                generationConfig: {
+                    systemInstruction: { parts: [{ text: systemPrompt }] }
+                }
+            })
+        });
+
+        if (!response.ok) throw new Error('Gemini API call failed');
+        
+        const data = await response.json();
+        const textResponse = data.candidates?.[0]?.content?.parts?.[0]?.text;
+        
+        if (textResponse) {
+            narrativeProfile.profileText = textResponse.trim();
+            narrativeProfile.lastUpdated = new Date().toLocaleDateString(undefined, { year: 'numeric', month: 'long', day: 'numeric' });
+            await saveNarrativeProfile();
+            alert('Coach Narrative Profile updated successfully!');
+            render();
+        } else {
+            throw new Error('Empty coach reflection response');
+        }
+
+    } catch (error) {
+        console.error('Reflection job failed:', error);
+        alert(`Failed to complete reflection analysis: ${error.message}`);
+    } finally {
+        toggleLoading(false);
+    }
+}
+
+/* ===================== AI DAILY QUEST SUGGESTIONS GENERATOR ===================== */
+async function generateAllDailySuggestions(force = false) {
     if (isGeneratingQuests) return;
     isGeneratingQuests = true;
 
-    // Show loading indicators
+    // Show spinner in modal
     const loader = $('#aiModalLoader');
     if (loader) {
-        $('#aiModalLoaderText').textContent = `Generating custom ${category} quests via Gemini...`;
+        $('#aiModalLoaderText').textContent = 'Consulting the Quest Master for suggestions...';
         loader.style.display = 'flex';
     }
 
     const todayStr = getTodayDateStr();
-    const apiKey = localStorage.getItem('lifesystem_gemini_api_key') || $('#settingsApiKey').value.trim();
+    const apiKey = localStorage.getItem('lifesystem_gemini_api_key');
     
-    // Read category settings
-    let goals = '', level = 'Beginner', focus = '';
-    if (category === 'tech') {
-        goals = questSettings.techGoals;
-        level = questSettings.techLevel;
-        focus = questSettings.techFocus;
-    } else if (category === 'piano') {
-        goals = questSettings.pianoGoals;
-        level = questSettings.pianoLevel;
-        focus = questSettings.pianoFocus;
-    } else if (category === 'music') {
-        goals = questSettings.musicGoals;
-        level = questSettings.musicLevel;
-        focus = questSettings.musicFocus;
-    }
-
-    // Get recently completed tasks to avoid repetition
-    const categoryQuests = tasks.filter(t => t.category === category);
-    const recentCompletedTitles = categoryQuests
-        .filter(t => t.completed)
-        .slice(-10)
-        .map(t => t.title);
-
-    // If key is missing, fallback to predefined tasks
+    // Fallback if no API Key
     if (!apiKey) {
-        console.warn('⚠️ Gemini API Key not found. Falling back to default list.');
-        generateFallbackQuests(category, level, todayStr);
-        await saveQuests();
+        console.warn('⚠️ Gemini key missing. Generating offline fallback suggestions.');
+        generateFallbackSuggestions(todayStr);
+        await saveSuggestions();
         isGeneratingQuests = false;
         if (loader) loader.style.display = 'none';
         render();
-        if (activeCategory === category) openQuestModal(category);
+        if (activeCategory) openQuestModal(activeCategory);
         return;
     }
 
     try {
-        const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${apiKey}`;
+        const stats = calculateLayer1Stats();
         
+        // Scan for unfinished 'in_progress' tasks from the last 3 days
+        const limitDate = new Date();
+        limitDate.setDate(limitDate.getDate() - 3);
+        const limitStr = limitDate.toLocaleDateString('en-CA');
+        const inProgressQuests = tasks.filter(t => t.status === 'in_progress' && t.date >= limitStr);
+
+        // Fetch active projects (Layer 4)
+        const activeProjsStr = projects
+            .filter(p => p.status === 'active')
+            .map(p => `- [${p.category.toUpperCase()}] Project: "${p.name}", Stage: "${p.currentStage}", Milestone: "${p.nextMilestone}"`)
+            .join('\n');
+
+        // Compile prompt context
         const promptText = `
-        Category: "${category}"
-        User's Skill Level: "${level}"
-        User's Goals: "${goals}"
-        Current Monthly Focus: "${focus}"
-        Recently Completed Quests (DO NOT REPEAT):
-        ${recentCompletedTitles.length > 0 ? recentCompletedTitles.map(t => `- ${t}`).join('\n') : 'None'}
+        Goals:
+        - Tech: "${questSettings.techGoals}"
+        - Piano: "${questSettings.pianoGoals}"
+        - Music Prod: "${questSettings.musicGoals}"
+
+        Monthly Focuses:
+        - Tech Focus: "${questSettings.techFocus}"
+        - Piano Focus: "${questSettings.pianoFocus}"
+        - Music Focus: "${questSettings.musicFocus}"
+
+        Current Skill Levels:
+        - Tech: ${questSettings.techLevel}
+        - Piano: ${questSettings.pianoLevel}
+        - Music: ${questSettings.musicLevel}
+
+        Active Projects (Layer 4):
+        ${activeProjsStr || 'None.'}
+
+        Narrative Profile (Layer 2 User Profile):
+        "${narrativeProfile.profileText}"
+
+        Structured Stats (Layer 1):
+        - Tech Rate: ${stats.techRate}%, Piano: ${stats.pianoRate}%, Music: ${stats.musicRate}%
+        - Favorite Focus: ${stats.favTopic}, Often Skipped: ${stats.skippedTopic}
+
+        Yesterday's Unfinished Tasks:
+        ${inProgressQuests.length > 0 ? inProgressQuests.map(q => `- Category: ${q.category}, Task: "${q.title}"`).join('\n') : 'None.'}
         `;
 
         const systemPrompt = `
-        You are the AI Quest Master for a gamified RPG skill progression app.
-        Your job is to generate exactly 3 daily tasks for the category: "${category}".
+        You are the AI Quest Master for the Bubble Quest skill progression app.
+        Your job is to generate exactly 3 daily suggested tasks for EACH of the three categories: "tech", "piano", and "music".
         
-        The tasks must be:
-        1. Specific and Actionable (no vague descriptions like "Learn React" or "Practice Piano").
-        2. Finishable in one sitting (15 to 60 minutes).
-        3. Small enough to complete today.
-        4. Aligned with the user's monthly focus, goals, and skill level.
-        
-        Examples of Good Specific Tasks:
-        - "Watch React Lesson 12 about State Hook"
-        - "Build a basic login component UI with controlled inputs"
-        - "Practice C Major scale and arpeggios slowly for 15 minutes"
-        - "Sight-read 1 page from Bartok Mikrokosmos Book 2"
-        - "Program a basic drum grid pattern in Ableton DAW"
-        - "Recreate the bass synth patch of a favorite song using Serum"
+        Generate:
+        - 3 suggested tasks for "tech"
+        - 3 suggested tasks for "piano"
+        - 3 suggested tasks for "music"
 
-        You MUST output a JSON object with a single key "tasks" containing an array of exactly 3 strings. Do not include markdown wraps or anything else.
-        Example:
+        Rules:
+        1. Be extremely specific, actionable, and finishable in one sitting (15 to 60 minutes).
+        2. Ensure they support the user's active projects milestones first. If a project is defined in that category, write tasks to build that project!
+        3. If there are yesterday's unfinished tasks in a category, write a SEQUENTIAL CONTINUATION task for it today (e.g. if yesterday's task was "Learn bars 1-16 of piece", suggest "Practice bars 17-32 of piece" for today).
+        4. Match the user's specified skill levels.
+        5. Avoid repeating recently completed or skipped topics.
+        
+        Format your response in a single JSON block:
         {
-          "tasks": [
-            "Watch React Lesson 12",
-            "Build Login Component UI",
-            "Push today's code changes to GitHub"
+          "tech": [
+            "Suggested task 1 description",
+            "Suggested task 2 description",
+            "Suggested task 3 description"
+          ],
+          "piano": [
+            "Suggested task 1 description",
+            "Suggested task 2",
+            "Suggested task 3"
+          ],
+          "music": [
+            "Suggested task 1",
+            "Suggested task 2",
+            "Suggested task 3"
           ]
         }
+        Do not wrap in markdown or any other tags.
         `;
 
+        const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${apiKey}`;
+        
         const response = await fetch(url, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
@@ -441,93 +695,290 @@ async function generateDailyQuests(category, force = false) {
             })
         });
 
-        if (!response.ok) {
-            const errData = await response.json();
-            throw new Error(errData.error?.message || 'Gemini API call failed');
-        }
-
+        if (!response.ok) throw new Error('API Request failed');
+        
         const data = await response.json();
         const textResponse = data.candidates?.[0]?.content?.parts?.[0]?.text;
-        if (!textResponse) throw new Error('Empty response from AI engine');
+        if (!textResponse) throw new Error('No suggestions returned');
 
         const parsed = JSON.parse(textResponse);
-        if (!parsed.tasks || parsed.tasks.length < 3) {
-            throw new Error('Malformed JSON received from AI');
-        }
+        suggestions.date = todayStr;
+        suggestions.tech = parsed.tech || [];
+        suggestions.piano = parsed.piano || [];
+        suggestions.music = parsed.music || [];
 
-        // Remove old tasks for today to prevent duplicates if regenerating
-        tasks = tasks.filter(t => !(t.category === category && t.date === todayStr));
-
-        // Add today's generated tasks
-        parsed.tasks.forEach(title => {
-            tasks.push({
-                id: (Date.now() + Math.random()).toString(),
-                category: category,
-                title: title.trim(),
-                completed: false,
-                completedAt: null,
-                notes: '',
-                date: todayStr
-            });
-        });
-
-        await saveQuests();
+        await saveSuggestions();
 
     } catch (error) {
-        console.error('AI Quest Generation failed, utilizing fallbacks:', error);
-        generateFallbackQuests(category, level, todayStr);
-        await saveQuests();
+        console.error('Quest generation failed, falling back:', error);
+        generateFallbackSuggestions(todayStr);
+        await saveSuggestions();
     } finally {
         isGeneratingQuests = false;
         if (loader) loader.style.display = 'none';
         render();
-        if (activeCategory === category) openQuestModal(category);
+        if (activeCategory) openQuestModal(activeCategory);
     }
 }
 
-function generateFallbackQuests(category, level, dateStr) {
-    // Clear today's quests in this category
-    tasks = tasks.filter(t => !(t.category === category && t.date === dateStr));
-
-    const defaults = DEFAULT_QUESTS[category]?.[level] || DEFAULT_QUESTS[category]?.['Beginner'];
-    defaults.forEach(title => {
-        tasks.push({
-            id: (Date.now() + Math.random()).toString(),
-            category: category,
-            title: title,
-            completed: false,
-            completedAt: null,
-            notes: '',
-            date: dateStr
-        });
-    });
+function generateFallbackSuggestions(dateStr) {
+    suggestions.date = dateStr;
+    suggestions.tech = DEFAULT_QUESTS.tech[questSettings.techLevel] || DEFAULT_QUESTS.tech.Beginner;
+    suggestions.piano = DEFAULT_QUESTS.piano[questSettings.pianoLevel] || DEFAULT_QUESTS.piano.Beginner;
+    suggestions.music = DEFAULT_QUESTS.music[questSettings.musicLevel] || DEFAULT_QUESTS.music.Beginner;
 }
 
-/* ===================== RESET & SCHEDULER LOGIC ===================== */
-async function checkDailyQuestReset() {
+async function checkDailySuggestionsReset() {
     const todayStr = getTodayDateStr();
-    
-    // Check if we already have quests generated for today
-    const categories = ['tech', 'piano', 'music'];
-    let needsGeneration = false;
-
-    categories.forEach(cat => {
-        const todayQuests = tasks.filter(t => t.category === cat && t.date === todayStr);
-        if (todayQuests.length === 0) {
-            needsGeneration = true;
-        }
-    });
-
-    if (needsGeneration) {
-        console.log('🌅 New day detected. Generating today\'s quests...');
-        // Generate quests for all categories
-        for (const cat of categories) {
-            const todayQuests = tasks.filter(t => t.category === cat && t.date === todayStr);
-            if (todayQuests.length === 0) {
-                await generateDailyQuests(cat);
-            }
-        }
+    if (suggestions.date !== todayStr) {
+        console.log('🌅 New day detected. Fetching new daily AI suggestions...');
+        await generateAllDailySuggestions();
     }
+}
+
+/* ===================== CHAT-BASED NATURAL LOGGING INTERFACE ===================== */
+async function processChatCoach(messageText) {
+    if (isProcessingChat) return;
+    isProcessingChat = true;
+
+    $('#chatLoader').style.display = 'block';
+
+    const apiKey = localStorage.getItem('lifesystem_gemini_api_key');
+    const todayStr = getTodayDateStr();
+
+    if (!apiKey) {
+        // Simple offline fallback
+        if (!questSettings.onboardingCompleted) {
+            if (messageText.toLowerCase().includes('complete') || messageText.toLowerCase().includes('skip')) {
+                questSettings.onboardingCompleted = true;
+                await saveQuestSettings();
+                appendMessage('assistant', "Gemini API Key is missing, so I have bypassed the conversational onboarding and unlocked default fallback suggestions for you. Your dashboard is now open!");
+                generateFallbackSuggestions(todayStr);
+                await saveSuggestions();
+                render();
+            } else {
+                appendMessage('assistant', "Offline Mode: Save a Gemini API Key in Settings to run the conversational AI onboarding! (Type 'complete' or 'skip' to bypass onboarding and unlock default offline suggestions).");
+            }
+        } else {
+            appendMessage('assistant', `Offline Mode: I received your message: "${messageText}". Save a Gemini API Key in Settings to get conversational progress logging!`);
+        }
+        isProcessingChat = false;
+        $('#chatLoader').style.display = 'none';
+        return;
+    }
+
+    try {
+        let systemPrompt = '';
+        let promptText = '';
+        
+        if (!questSettings.onboardingCompleted) {
+            // Conversational Onboarding Mode
+            systemPrompt = `
+            You are the Onboarding Coach for Bubble Quest, a gamified RPG skill progression app.
+            Your goal is to conduct a short, friendly, and structured onboarding interview to gather:
+            1. General (current life focus, goals for the next 6-12 months, what they feel stuck on).
+            2. Tech background (known stacks, active projects, confidence level 1-10, what to learn next).
+            3. Piano background (duration playing, current pieces, skills to improve).
+            4. Music Production background (DAW used, songs completed, skills to improve).
+            5. Time & Energy (hours per week, productive times, short tasks vs deep work preference).
+
+            Evaluate the conversation history and the user's latest response. Ask relevant follow-up questions to fill in any missing details. Ask only 1 or 2 questions at a time to prevent user overload. Keep the tone friendly, encouraging, and supportive (max 3 sentences per response).
+
+            If you have successfully gathered enough information to construct their initial profile, you MUST complete onboarding by returning a JSON response matching this exact structure:
+            {
+              "status": "complete",
+              "reply": "Excellent! I have gathered enough information to create your starting profile and unlock your quest dashboard. Let's start growing!",
+              "profile": {
+                "focus": ["Web Development", "Piano Technique", "Ableton Workflow"],
+                "skillLevels": {
+                  "tech": "Beginner" | "Intermediate" | "Advanced",
+                  "piano": "Beginner" | "Intermediate" | "Advanced",
+                  "music": "Beginner" | "Intermediate" | "Advanced",
+                  "techDetails": "Python: Intermediate, Django: Beginner...",
+                  "pianoDetails": "Currently practicing scales...",
+                  "musicDetails": "Ableton Live workflow..."
+                },
+                "activeProjects": [
+                  { "name": "Archie", "category": "tech", "currentStage": "Database Design", "nextMilestone": "Create Notes Upload" }
+                ],
+                "preferredTaskLength": "20-45 Minutes",
+                "learningStyle": "Prefers practical project-based tasks over theory."
+              }
+            }
+
+            If onboarding is still in progress, return:
+            {
+              "status": "chatting",
+              "reply": "Your next follow-up question(s)."
+            }
+            Do not output markdown block wraps. Only return pure JSON.
+            `;
+            
+            promptText = chatHistory.map(m => `${m.role.toUpperCase()}: ${m.text}`).join('\n') + `\nUSER: ${messageText}`;
+        } else {
+            // Normal logging mode
+            const todayQuests = tasks.filter(t => t.date === todayStr);
+            systemPrompt = `
+            You are the AI Coach for Bubble Quest. The user wants to log progress.
+            You must evaluate if the user's message matches any of today's active tasks.
+            
+            Today's Active Board Quests:
+            ${todayQuests.map(q => `- ID: "${q.id}" | "${q.title}" (Status: ${q.status})`).join('\n')}
+
+            Instruction:
+            - If the user's input clearly indicates they worked on, finished, completed, or skipped one of today's tasks, you MUST invoke a status change action.
+            - Status values can be:
+              - "completed" (if they are done)
+              - "in_progress" (if they practiced it, worked on it, or finished a part but the overall task is still active)
+              - "skipped" (if they chose not to do it)
+            - Notes should be a brief statement of what they completed or did.
+            - Return a JSON object ONLY:
+            {
+              "action": "update_task_status",
+              "taskId": "the-matching-task-id",
+              "status": "completed" | "in_progress" | "skipped",
+              "notes": "short description of achievement",
+              "reply": "Encouraging RPG coach response acknowledging the accomplishment (max 2 sentences)."
+            }
+            - If the user's message is general discussion, a question, or does not match today's tasks, return:
+            {
+              "action": "chat",
+              "reply": "Your conversational coach reply addressing their comment (max 2 sentences)."
+            }
+            Do not wrap the JSON output in markdown tags.
+            `;
+            
+            promptText = messageText;
+        }
+
+        const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${apiKey}`;
+        
+        const response = await fetch(url, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                contents: [{ parts: [{ text: promptText }] }],
+                generationConfig: {
+                    responseMimeType: "application/json",
+                    systemInstruction: { parts: [{ text: systemPrompt }] }
+                }
+            })
+        });
+
+        if (!response.ok) throw new Error('Coach fetch error');
+        
+        const data = await response.json();
+        const textResponse = data.candidates?.[0]?.content?.parts?.[0]?.text;
+        
+        if (textResponse) {
+            const result = JSON.parse(textResponse);
+            
+            if (!questSettings.onboardingCompleted) {
+                // Onboarding processing
+                if (result.status === 'complete') {
+                    // Update settings
+                    questSettings.onboardingCompleted = true;
+                    questSettings.techLevel = result.profile.skillLevels.tech || 'Beginner';
+                    questSettings.pianoLevel = result.profile.skillLevels.piano || 'Beginner';
+                    questSettings.musicLevel = result.profile.skillLevels.music || 'Beginner';
+                    
+                    questSettings.techFocus = result.profile.focus[0] || 'React Fundamentals';
+                    questSettings.pianoFocus = result.profile.focus[1] || 'Sight Reading';
+                    questSettings.musicFocus = result.profile.focus[2] || 'Ableton Workflow';
+                    
+                    questSettings.techGoals = result.profile.skillLevels.techDetails || 'Learn React';
+                    questSettings.pianoGoals = result.profile.skillLevels.pianoDetails || 'Practice pieces';
+                    questSettings.musicGoals = result.profile.skillLevels.musicDetails || 'Learn Ableton';
+                    
+                    await saveQuestSettings();
+
+                    // Save projects
+                    if (result.profile.activeProjects && result.profile.activeProjects.length > 0) {
+                        result.profile.activeProjects.forEach(proj => {
+                            projects.push({
+                                id: (Date.now() + Math.random()).toString(),
+                                name: proj.name,
+                                category: proj.category || 'tech',
+                                status: 'active',
+                                currentStage: proj.currentStage || 'Initial',
+                                nextMilestone: proj.nextMilestone || 'First Step'
+                            });
+                        });
+                        await saveProjects();
+                    }
+
+                    // Create baseline profile
+                    narrativeProfile.profileText = `Onboarding Profile established: Stated focuses include ${result.profile.focus.join(', ')}. Tech level: ${result.profile.skillLevels.tech} (${result.profile.skillLevels.techDetails}). Piano level: ${result.profile.skillLevels.piano} (${result.profile.skillLevels.pianoDetails}). Music Prod level: ${result.profile.skillLevels.music} (${result.profile.skillLevels.musicDetails}). Preferred task length: ${result.profile.preferredTaskLength}. Learning style: ${result.profile.learningStyle}.`;
+                    narrativeProfile.lastUpdated = new Date().toLocaleDateString(undefined, { year: 'numeric', month: 'long', day: 'numeric' });
+                    await saveNarrativeProfile();
+
+                    // Display replies
+                    appendMessage('assistant', result.reply);
+                    appendMessage('assistant', `Coach Profile established!\n🎯 Focuses: ${result.profile.focus.join(' | ')}\n📂 Active Projects: ${projects.map(p => p.name).join(', ') || 'None'}`);
+
+                    // Generate today's quests
+                    isProcessingChat = false;
+                    $('#chatLoader').style.display = 'none';
+                    await generateAllDailySuggestions();
+                    render();
+                } else {
+                    appendMessage('assistant', result.reply);
+                }
+            } else {
+                // Normal status update processing
+                if (result.action === 'update_task_status') {
+                    const quest = tasks.find(t => t.id === result.taskId);
+                    if (quest) {
+                        quest.status = result.status;
+                        quest.notes = result.notes || '';
+                        quest.completedAt = result.status === 'completed' ? new Date().toISOString() : null;
+                        await saveQuests();
+                        render();
+                    }
+                }
+                appendMessage('assistant', result.reply || "Logged it!");
+            }
+        } else {
+            throw new Error('No coach text returned');
+        }
+
+    } catch (error) {
+        console.error('Chat parsing error:', error);
+        appendMessage('assistant', "I had some trouble parsing that. I've logged it in chat but couldn't update the task board status automatically.");
+    } finally {
+        isProcessingChat = false;
+        $('#chatLoader').style.display = 'none';
+        await saveChatHistory();
+    }
+}
+
+function renderChatHistory() {
+    const messagesWrap = $('#chatMessages');
+    if (!messagesWrap) return;
+    messagesWrap.innerHTML = '';
+    if (chatHistory.length === 0) {
+        const msg = document.createElement('div');
+        msg.className = 'message assistant';
+        if (!questSettings.onboardingCompleted) {
+            msg.textContent = "Hello! I am your Bubble Quest AI Coach. Welcome! Before we start generating daily quests, let's establish your baseline profile. What are you currently working on in your life, and what skills are most important to you right now?";
+        } else {
+            msg.textContent = `Hey Remo! I am your Bubble Quest Coach. Tell me what you've done today (e.g. "Finished the React navbar" or "Practiced scales for 15 min") and I'll log your progress instantly!`;
+        }
+        messagesWrap.appendChild(msg);
+    } else {
+        chatHistory.forEach(msg => {
+            const div = document.createElement('div');
+            div.className = `message ${msg.role}`;
+            div.textContent = msg.text;
+            messagesWrap.appendChild(div);
+        });
+    }
+    messagesWrap.scrollTop = messagesWrap.scrollHeight;
+}
+
+function appendMessage(role, text) {
+    chatHistory.push({ role, text, timestamp: new Date().toISOString() });
+    renderChatHistory();
 }
 
 /* ===================== RPG PROGRESSION ENGINE ===================== */
@@ -535,11 +986,16 @@ function calculateProgression() {
     let totalXp = 0;
     let totalBubblesCompletedCount = 0;
     
-    // 100 XP per completed task
-    const completedTasks = tasks.filter(t => t.completed);
-    totalXp += completedTasks.length * 100;
+    // XP rates:
+    // +100 XP per completed task
+    // +100 XP per in_progress continuation task
+    const completedTasks = tasks.filter(t => t.status === 'completed');
+    const inProgressTasks = tasks.filter(t => t.status === 'in_progress');
 
-    // Group tasks by date & category to reward 300 XP completion bonus
+    totalXp += completedTasks.length * 100;
+    totalXp += inProgressTasks.length * 100;
+
+    // Group tasks by date & category to reward 300 XP completion bonus (bubbles completed)
     const completionsByDay = {};
     
     tasks.forEach(t => {
@@ -548,12 +1004,11 @@ function calculateProgression() {
             completionsByDay[key] = { total: 0, completed: 0 };
         }
         completionsByDay[key].total++;
-        if (t.completed) completionsByDay[key].completed++;
+        if (t.status === 'completed') completionsByDay[key].completed++;
     });
 
-    // Award bonus
     Object.values(completionsByDay).forEach(stat => {
-        if (stat.total === 3 && stat.completed === 3) {
+        if (stat.total > 0 && stat.completed === stat.total) {
             totalXp += 300;
             totalBubblesCompletedCount++;
         }
@@ -577,7 +1032,7 @@ function calculateProgression() {
     };
 }
 
-/* ===================== RENDER LAYOUT & VIEWS ===================== */
+/* ===================== RENDER AND DRAWING INTERFACES ===================== */
 function render() {
     renderDashboard();
     renderAnalytics();
@@ -594,21 +1049,21 @@ function renderDashboard() {
 
     categories.forEach(cat => {
         const todayQuests = tasks.filter(t => t.category === cat && t.date === todayStr);
-        const completedQuests = todayQuests.filter(t => t.completed);
+        const completedQuests = todayQuests.filter(t => t.status === 'completed');
         
         totalTasksToday += todayQuests.length;
         completedTasksToday += completedQuests.length;
 
-        // Render Focus & Stats under Bubbles
+        // Render Focus under Bubbles
         let focusText = 'None';
         if (cat === 'tech') focusText = questSettings.techFocus;
         if (cat === 'piano') focusText = questSettings.pianoFocus;
         if (cat === 'music') focusText = questSettings.musicFocus;
 
         $(`#focus-${cat}`).textContent = focusText || 'Define Focus';
-        $(`#stats-${cat}`).textContent = `${completedQuests.length}/3 Completed`;
+        $(`#stats-${cat}`).textContent = `${completedQuests.length}/${todayQuests.length || 3} Today`;
 
-        // Calculate progress ring circle
+        // Calculate progress ring
         const ring = $(`#ring-${cat}`);
         const bubbleEl = $(`#bubble-${cat}`);
         
@@ -619,12 +1074,19 @@ function renderDashboard() {
             ring.style.strokeDashoffset = strokeDashoffset;
         }
 
-        // Completion indicator
-        if (todayQuests.length === 3 && completedQuests.length === 3) {
+        // Completion badge
+        if (todayQuests.length > 0 && completedQuests.length === todayQuests.length) {
             bubbleEl.classList.add('completed');
             completedBubblesToday++;
         } else {
             bubbleEl.classList.remove('completed');
+        }
+
+        // Locked state check for incomplete onboarding
+        if (!questSettings.onboardingCompleted) {
+            bubbleEl.classList.add('locked');
+        } else {
+            bubbleEl.classList.remove('locked');
         }
     });
 
@@ -632,37 +1094,98 @@ function renderDashboard() {
     const progressPercent = totalTasksToday > 0 ? Math.round((completedTasksToday / totalTasksToday) * 100) : 0;
     $('#overallProgressText').textContent = `${progressPercent}%`;
     $('#overallProgressBar').style.width = `${progressPercent}%`;
-    $('#dailyQuestsStatus').textContent = `${completedTasksToday} of ${totalTasksToday} Quests Cleared`;
+    $('#dailyQuestsStatus').textContent = `${completedTasksToday} of ${totalTasksToday} Active Quests Completed`;
     $('#dailyBubblesStatus').textContent = `${completedBubblesToday} of 3 Bubbles Completed`;
+
+    // Render Quest Board list on Dashboard
+    renderQuestBoardOnDashboard();
+    
+    // Render Chat History on Dashboard
+    renderChatHistory();
+}
+
+function renderQuestBoardOnDashboard() {
+    const todayStr = getTodayDateStr();
+    const board = $('#activeQuestsBoard');
+    if (!board) return;
+    board.innerHTML = '';
+
+    if (!questSettings.onboardingCompleted) {
+        board.innerHTML = `
+            <div class="onboarding-welcome-card" style="background: rgba(161, 140, 209, 0.05); border: 1px dashed var(--primary); padding: 1.5rem; border-radius: var(--radius-md); text-align: center; margin-top: 1rem;">
+                <span style="font-size: 2rem; display: block; margin-bottom: 0.5rem;">👋</span>
+                <h4 style="font-family: var(--font-rpg); font-size: 1.15rem; color: var(--primary); margin-bottom: 0.5rem;">Welcome to Bubble Quest!</h4>
+                <p style="font-size: 0.85rem; color: var(--text-light); line-height: 1.5;">
+                    I've locked your daily suggestions until we set up your starting profile. Introduce yourself to me in the <strong>AI Coach Console</strong> on the right to complete a short onboarding interview and unlock your dashboard!
+                </p>
+            </div>
+        `;
+        return;
+    }
+
+    const todayQuests = tasks.filter(t => t.date === todayStr);
+    
+    if (todayQuests.length === 0) {
+        board.innerHTML = '<p class="empty-state">No active tasks on your Quest Board. Click on a bubble above to generate suggestions and add them!</p>';
+        return;
+    }
+
+    todayQuests.forEach(quest => {
+        const item = document.createElement('div');
+        item.className = 'active-quest-item-card';
+        
+        item.innerHTML = `
+            <div class="active-quest-header">
+                <span class="active-quest-title">${quest.title}</span>
+                <span class="quest-status-badge status-${quest.status.replace('_', '-')}">${quest.status}</span>
+            </div>
+            <div class="active-quest-controls">
+                <select class="status-selector" data-id="${quest.id}">
+                    <option value="pending" ${quest.status === 'pending' ? 'selected' : ''}>pending</option>
+                    <option value="in_progress" ${quest.status === 'in_progress' ? 'selected' : ''}>in_progress</option>
+                    <option value="completed" ${quest.status === 'completed' ? 'selected' : ''}>completed</option>
+                    <option value="skipped" ${quest.status === 'skipped' ? 'selected' : ''}>skipped</option>
+                    <option value="carried_forward" ${quest.status === 'carried_forward' ? 'selected' : ''}>carried_forward</option>
+                </select>
+                <span style="font-size: 0.75rem; color: var(--text-muted); text-transform: uppercase;">${quest.category}</span>
+            </div>
+        `;
+        board.appendChild(item);
+    });
 }
 
 function renderAnalytics() {
     const prog = calculateProgression();
-    
+    const stats = calculateLayer1Stats();
+
     $('#rpgLevel').textContent = prog.level;
     $('#rpgXpText').textContent = `${prog.xpProgress} / 1000 XP`;
     $('#rpgXpPercent').textContent = `${prog.xpPercent}%`;
     $('#rpgXpBar').style.width = `${prog.xpPercent}%`;
 
-    // Set metrics
+    // Metrics
     $('#statTotalCompleted').textContent = prog.completedCount;
+    $('#statTotalSkipped').textContent = tasks.filter(t => t.status === 'skipped').length;
     $('#statTotalBubbles').textContent = prog.bubblesCompleted;
+    $('#statStreak').textContent = `${stats.streak} days`;
 
-    // Weekly completion rate calculation
-    const weeklyRate = calculateRateForPastDays(7);
-    $('#statWeeklyRate').textContent = `${weeklyRate}%`;
+    // Layer 1 Structured Stats Details
+    $('#statFavTopic').textContent = stats.favTopic;
+    $('#statSkippedTopic').textContent = stats.skippedTopic;
+    $('#statCompleted30').textContent = stats.completed30;
+    $('#statSkipped30').textContent = stats.skipped30;
 
-    // Monthly completion rate calculation
-    const monthlyRate = calculateRateForPastDays(30);
-    $('#statMonthlyRate').textContent = `${monthlyRate}%`;
+    // Layer 2 Narrative Profile Details
+    $('#narrativeProfileText').textContent = `"${narrativeProfile.profileText}"`;
+    $('#profileLastUpdated').textContent = `Last Updated: ${narrativeProfile.lastUpdated}`;
 
-    // Render Weekly Bar Graph
+    // Rates
+    $('#statWeeklyRate').textContent = `${calculateRateForPastDays(7)}%`;
+    $('#statMonthlyRate').textContent = `${calculateRateForPastDays(30)}%`;
+
+    // Render charts & history
     renderWeeklyChart();
-
-    // Render Category Balance Graph
     renderCategoryBalanceChart();
-
-    // Render Recent Completed Quest Logs
     renderHistoryLog();
 }
 
@@ -677,7 +1200,7 @@ function calculateRateForPastDays(daysCount) {
     });
 
     if (relevantTasks.length === 0) return 0;
-    const completedCount = relevantTasks.filter(t => t.completed).length;
+    const completedCount = relevantTasks.filter(t => t.status === 'completed').length;
     return Math.round((completedCount / relevantTasks.length) * 100);
 }
 
@@ -687,21 +1210,20 @@ function renderWeeklyChart() {
     chartContainer.innerHTML = '';
 
     const weekdays = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
-    
-    // Get last 7 days dates
     const dates = [];
+    
     for (let i = 6; i >= 0; i--) {
         const d = new Date();
         d.setDate(d.getDate() - i);
         dates.push({
-            dateStr: d.toLocaleDateString('en-CA'), // YYYY-MM-DD
+            dateStr: d.toLocaleDateString('en-CA'),
             dayLabel: weekdays[d.getDay()]
         });
     }
 
     dates.forEach(dayInfo => {
         const dayTasks = tasks.filter(t => t.date === dayInfo.dateStr);
-        const completed = dayTasks.filter(t => t.completed).length;
+        const completed = dayTasks.filter(t => t.status === 'completed').length;
         const total = dayTasks.length;
         const pct = total > 0 ? Math.round((completed / total) * 100) : 0;
 
@@ -731,7 +1253,7 @@ function renderCategoryBalanceChart() {
 
     categories.forEach(cat => {
         const catQuests = tasks.filter(t => t.category === cat.key);
-        const completed = catQuests.filter(t => t.completed).length;
+        const completed = catQuests.filter(t => t.status === 'completed').length;
         const total = catQuests.length;
         const pct = total > 0 ? Math.round((completed / total) * 100) : 0;
 
@@ -757,7 +1279,7 @@ function renderHistoryLog() {
     logContainer.innerHTML = '';
 
     const completedQuests = tasks
-        .filter(t => t.completed)
+        .filter(t => t.status === 'completed')
         .sort((a, b) => new Date(b.completedAt) - new Date(a.completedAt))
         .slice(0, 15);
 
@@ -785,7 +1307,35 @@ function renderHistoryLog() {
 }
 
 function renderSettings() {
-    // Handled on load/saving mostly.
+    renderProjectsList();
+}
+
+function renderProjectsList() {
+    const container = $('#activeProjectsList');
+    if (!container) return;
+    container.innerHTML = '';
+
+    const activeProjects = projects.filter(p => p.status === 'active');
+    
+    if (activeProjects.length === 0) {
+        container.innerHTML = '<p class="empty-state" style="padding: 1rem 0;">No active projects defined. Define one above to guide your AI suggestions!</p>';
+        return;
+    }
+
+    activeProjects.forEach(proj => {
+        const card = document.createElement('div');
+        card.className = `project-card-item ${proj.category}`;
+        
+        card.innerHTML = `
+            <div class="project-card-header">
+                <span class="project-card-name">${proj.name}</span>
+                <button class="project-delete-btn" data-id="${proj.id}">&times;</button>
+            </div>
+            <p class="project-card-detail"><strong>Stage:</strong> ${proj.currentStage}</p>
+            <p class="project-card-detail"><strong>Milestone:</strong> ${proj.nextMilestone}</p>
+        `;
+        container.appendChild(card);
+    });
 }
 
 function populateSettingsFields() {
@@ -801,7 +1351,6 @@ function populateSettingsFields() {
     $('#musicLevel').value = questSettings.musicLevel || 'Beginner';
     $('#musicFocus').value = questSettings.musicFocus || '';
 
-    // Load key if exists
     const key = localStorage.getItem('lifesystem_gemini_api_key') || '';
     $('#settingsApiKey').value = key;
 }
@@ -811,17 +1360,17 @@ function openQuestModal(category) {
     activeCategory = category;
     const todayStr = getTodayDateStr();
     
-    // Configure header based on category
-    let title = 'Tech Quests';
+    // Set headers
+    let title = 'Tech Panel';
     let icon = '💻';
     let focus = questSettings.techFocus;
 
     if (category === 'piano') {
-        title = 'Piano Quests';
+        title = 'Piano Panel';
         icon = '🎹';
         focus = questSettings.pianoFocus;
     } else if (category === 'music') {
-        title = 'Music Production Quests';
+        title = 'Music Production Panel';
         icon = '🎛️';
         focus = questSettings.musicFocus;
     }
@@ -831,54 +1380,80 @@ function openQuestModal(category) {
     $('#questModalFocus').textContent = focus || 'None';
     $('#questModalDate').textContent = `TODAY: ${new Date().toLocaleDateString(undefined, { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}`;
 
-    // Filter quests
-    const todayQuests = tasks.filter(t => t.category === category && t.date === todayStr);
+    // Draw active board tab content
+    renderModalActiveQuests();
 
-    // Render quest list items
+    // Draw suggestions tab content
+    renderModalSuggestions();
+
+    // Show modal
+    $('#questModal').classList.add('active');
+}
+
+function renderModalActiveQuests() {
+    const todayStr = getTodayDateStr();
+    const todayQuests = tasks.filter(t => t.category === activeCategory && t.date === todayStr);
     const listContainer = $('#questsList');
     listContainer.innerHTML = '';
 
     if (todayQuests.length === 0) {
-        listContainer.innerHTML = '<p class="empty-state">No quests loaded. Generate below to start!</p>';
+        listContainer.innerHTML = '<p class="empty-state">Your Quest Board is empty for today. Head to the "AI Suggestions" tab to select and add tasks!</p>';
         $('#categoryCompleteBanner').style.display = 'none';
     } else {
-        todayQuests.forEach((quest, index) => {
+        todayQuests.forEach(quest => {
             const item = document.createElement('div');
-            item.className = `quest-item ${quest.completed ? 'completed' : ''}`;
+            item.className = `quest-item ${quest.status === 'completed' ? 'completed' : ''}`;
             
             item.innerHTML = `
                 <div class="quest-main-row">
-                    <label class="quest-checkbox-label ${quest.completed ? 'line-through' : ''}">
-                        <input type="checkbox" class="quest-checkbox" data-id="${quest.id}" ${quest.completed ? 'checked' : ''}>
-                        <span class="checkmark"></span>
-                        ${quest.title}
-                    </label>
-                    <button class="quest-notes-toggle" data-id="${quest.id}">📝 Notes</button>
+                    <span style="font-weight: 500; font-size: 0.95rem; color: var(--text);">${quest.title}</span>
+                    <span class="quest-status-badge status-${quest.status.replace('_', '-')}">${quest.status}</span>
                 </div>
-                <div class="quest-notes-area" id="notes-area-${quest.id}" style="${quest.notes ? '' : 'display: none;'}">
-                    <textarea class="quest-notes-input" placeholder="Type a note about what you accomplished..." data-id="${quest.id}">${quest.notes || ''}</textarea>
-                    ${quest.completedAt ? `<span class="quest-completed-timestamp">Done at ${new Date(quest.completedAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>` : ''}
+                <div style="display: flex; gap: 0.5rem; justify-content: space-between; align-items: center; margin-top: 0.5rem; border-top: 1px solid rgba(255,255,255,0.03); padding-top: 0.5rem;">
+                    <button class="quest-notes-toggle" data-id="${quest.id}" style="font-size: 0.75rem; color: var(--text-light); background: transparent; border: none; cursor: pointer; text-decoration: underline;">✏️ Notes & Status</button>
+                    ${quest.completedAt ? `<span class="quest-completed-timestamp" style="font-size: 0.7rem; color: var(--text-muted);">Done at ${new Date(quest.completedAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>` : ''}
+                </div>
+                <div class="quest-notes-area" id="notes-area-${quest.id}" style="display: none; margin-top: 0.5rem;">
+                    <p style="font-size: 0.75rem; color: var(--text-light); margin-bottom: 0.3rem;">Notes: ${quest.notes || 'None logged.'}</p>
                 </div>
             `;
             listContainer.appendChild(item);
         });
 
-        // Check category completion banner status
-        const isDone = todayQuests.every(q => q.completed);
+        // Banner completion status
+        const isDone = todayQuests.every(q => q.status === 'completed');
         const banner = $('#categoryCompleteBanner');
-        if (isDone && todayQuests.length === 3) {
-            $('#categoryCompleteTitle').textContent = `✅ Daily ${category === 'music' ? 'Music Prod' : category.charAt(0).toUpperCase() + category.slice(1)} Quest Complete!`;
+        if (isDone && todayQuests.length >= 3) {
+            $('#categoryCompleteTitle').textContent = `✅ Daily ${activeCategory === 'music' ? 'Music Prod' : activeCategory.charAt(0).toUpperCase() + activeCategory.slice(1)} Quest Complete!`;
             banner.style.display = 'flex';
         } else {
             banner.style.display = 'none';
         }
     }
+}
 
-    // Hide manual edit form if it was open
-    $('#manualEditForm').style.display = 'none';
+function renderModalSuggestions() {
+    const listContainer = $('#suggestionsList');
+    if (!listContainer) return;
+    listContainer.innerHTML = '';
 
-    // Show modal
-    $('#questModal').classList.add('active');
+    const list = suggestions[activeCategory] || [];
+    
+    if (list.length === 0) {
+        listContainer.innerHTML = '<p class="empty-state">No suggestions generated yet. Click "Regenerate" below to generate daily AI suggestions.</p>';
+        return;
+    }
+
+    list.forEach((title, index) => {
+        const item = document.createElement('div');
+        item.className = 'suggestion-card';
+        
+        item.innerHTML = `
+            <span class="suggestion-title">${title}</span>
+            <button class="btn-add-suggestion" data-title="${title}" data-index="${index}">+</button>
+        `;
+        listContainer.appendChild(item);
+    });
 }
 
 function closeQuestModal() {
@@ -887,13 +1462,30 @@ function closeQuestModal() {
     render();
 }
 
+function toggleModalSubTab(tab) {
+    modalSubTab = tab;
+    $$('.modal-tab-btn').forEach(btn => btn.classList.remove('active'));
+    $(`#modalTab${tab.charAt(0).toUpperCase() + tab.slice(1)}`).classList.add('active');
+
+    if (tab === 'quests') {
+        $('#modalActiveBoardContent').style.display = 'block';
+        $('#modalSuggestionsContent').style.display = 'none';
+        $(`#modalTabQuests`).style.borderBottom = '2px solid var(--primary)';
+        $(`#modalTabSuggestions`).style.borderBottom = 'none';
+    } else {
+        $('#modalActiveBoardContent').style.display = 'none';
+        $('#modalSuggestionsContent').style.display = 'block';
+        $(`#modalTabQuests`).style.borderBottom = 'none';
+        $(`#modalTabSuggestions`).style.borderBottom = '2px solid var(--primary)';
+    }
+}
+
 /* ===================== MOTIVATION POPUP SYSTEM ===================== */
 function checkDailyQuotePopup() {
     const lastQuoteStr = localStorage.getItem('lifesystem_last_quote_date');
     const todayStr = getTodayDateStr();
 
     if (lastQuoteStr !== todayStr) {
-        // First load of the day, show motivational quotes
         const randomIndex = Math.floor(Math.random() * MOTIVATIONAL_QUOTES.length);
         const quote = MOTIVATIONAL_QUOTES[randomIndex];
 
@@ -927,11 +1519,9 @@ document.addEventListener('DOMContentLoaded', async () => {
             const targetTab = e.target.getAttribute('data-tab');
             if (!targetTab) return;
 
-            // Update tab button classes
             $$('.nav-btn').forEach(b => b.classList.remove('active'));
             e.target.classList.add('active');
 
-            // Toggle active views
             $$('.tab-view').forEach(view => view.classList.remove('active'));
             $(`#${targetTab}View`).classList.add('active');
             
@@ -944,124 +1534,215 @@ document.addEventListener('DOMContentLoaded', async () => {
     $$('.skill-bubble').forEach(bubble => {
         bubble.addEventListener('click', () => {
             const category = bubble.getAttribute('data-category');
+            toggleModalSubTab('quests');
             openQuestModal(category);
         });
     });
 
-    // 4. Modal Close events
+    // 4. Modal Sub-Tabs toggle
+    $('#modalTabQuests').addEventListener('click', () => toggleModalSubTab('quests'));
+    $('#modalTabSuggestions').addEventListener('click', () => toggleModalSubTab('suggestions'));
+
+    // 5. Modal Close events
     $('#closeQuestModalBtn').addEventListener('click', closeQuestModal);
     $('#questModal').addEventListener('click', (e) => {
         if (e.target === $('#questModal')) closeQuestModal();
     });
 
-    // 5. Quest Completed Checkbox Toggle
-    $('#questsList').addEventListener('change', async (e) => {
-        if (e.target.classList.contains('quest-checkbox')) {
+    // 6. Active Quest status dropdown changer from Dashboard
+    $('#activeQuestsBoard').addEventListener('change', async (e) => {
+        if (e.target.classList.contains('status-selector')) {
             const id = e.target.getAttribute('data-id');
-            const checked = e.target.checked;
+            const status = e.target.value;
             
             const quest = tasks.find(t => t.id === id);
             if (quest) {
-                quest.completed = checked;
-                quest.completedAt = checked ? new Date().toISOString() : null;
-                
+                quest.status = status;
+                quest.completedAt = status === 'completed' ? new Date().toISOString() : null;
                 await saveQuests();
-                
-                // Redraw Quest list to trigger completion status
-                openQuestModal(activeCategory);
                 render();
             }
         }
     });
 
-    // 6. Toggle Notes Textareas
+    // 7. Toggle Notes Textarea inside Quest Modal
     $('#questsList').addEventListener('click', (e) => {
         if (e.target.classList.contains('quest-notes-toggle')) {
             const id = e.target.getAttribute('data-id');
-            const notesArea = $(`#notes-area-${id}`);
-            if (notesArea) {
-                notesArea.style.display = notesArea.style.display === 'none' ? 'block' : 'none';
-            }
-        }
-    });
-
-    // 7. Save Quest Notes on change
-    $('#questsList').addEventListener('input', async (e) => {
-        if (e.target.classList.contains('quest-notes-input')) {
-            const id = e.target.getAttribute('data-id');
-            const text = e.target.value;
-            
             const quest = tasks.find(t => t.id === id);
             if (quest) {
-                quest.notes = text;
-                // Defer saving notes until blur or timeout to prevent excessive database calling
+                // Open manual edit form instead to allow full edit
+                $('#manualQuestTitle').value = quest.title;
+                $('#manualQuestStatus').value = quest.status;
+                $('#manualQuestNotes').value = quest.notes || '';
+                $('#manualQuestId').value = quest.id;
+                
+                $('#saveManualQuestBtn').textContent = 'Update Quest';
+                $('#deleteManualQuestBtn').style.display = 'block';
+                $('#manualEditForm').style.display = 'block';
             }
         }
     });
 
-    $('#questsList').addEventListener('focusout', async (e) => {
-        if (e.target.classList.contains('quest-notes-input')) {
-            await saveQuests();
-        }
-    });
+    // 8. Add a Suggestion to Today's Dashboard
+    $('#suggestionsList').addEventListener('click', async (e) => {
+        if (e.target.classList.contains('btn-add-suggestion')) {
+            const title = e.target.getAttribute('data-title');
+            const index = parseInt(e.target.getAttribute('data-index'));
+            const todayStr = getTodayDateStr();
 
-    // 8. Regenerate Quests through AI
-    $('#aiRegenerateBtn').addEventListener('click', async () => {
-        if (activeCategory) {
-            await generateDailyQuests(activeCategory, true);
-        }
-    });
+            // Perform Task continuation logic check:
+            // If the suggestion was added, check if yesterday had an 'in_progress' task in this category.
+            // If yes, mark it as 'carried_forward'.
+            const limitDate = new Date();
+            limitDate.setDate(limitDate.getDate() - 3);
+            const limitStr = limitDate.toLocaleDateString('en-CA');
+            const yesterdayInProgress = tasks.find(t => t.category === activeCategory && t.status === 'in_progress' && t.date >= limitStr);
 
-    // 9. Manual Quests Edit Trigger
-    $('#manualEditBtn').addEventListener('click', () => {
-        const todayStr = getTodayDateStr();
-        const todayQuests = tasks.filter(t => t.category === activeCategory && t.date === todayStr);
+            if (yesterdayInProgress) {
+                yesterdayInProgress.status = 'carried_forward';
+            }
 
-        $('#manualQuest0').value = todayQuests[0]?.title || '';
-        $('#manualQuest1').value = todayQuests[1]?.title || '';
-        $('#manualQuest2').value = todayQuests[2]?.title || '';
-
-        $('#manualEditForm').style.display = 'block';
-    });
-
-    $('#cancelManualQuestsBtn').addEventListener('click', () => {
-        $('#manualEditForm').style.display = 'none';
-    });
-
-    $('#saveManualQuestsBtn').addEventListener('click', async () => {
-        const todayStr = getTodayDateStr();
-        const q0 = $('#manualQuest0').value.trim();
-        const q1 = $('#manualQuest1').value.trim();
-        const q2 = $('#manualQuest2').value.trim();
-
-        if (!q0 || !q1 || !q2) {
-            alert('Please fill out all 3 quests.');
-            return;
-        }
-
-        // Clean out and rewrite
-        tasks = tasks.filter(t => !(t.category === activeCategory && t.date === todayStr));
-        
-        const inputQuests = [q0, q1, q2];
-        inputQuests.forEach(title => {
+            // Create task
             tasks.push({
                 id: (Date.now() + Math.random()).toString(),
                 category: activeCategory,
                 title: title,
-                completed: false,
+                status: 'pending',
+                date: todayStr,
                 completedAt: null,
                 notes: '',
-                date: todayStr
+                parentTaskId: yesterdayInProgress ? yesterdayInProgress.id : null
             });
-        });
+
+            // Remove suggestion from list
+            suggestions[activeCategory].splice(index, 1);
+
+            await saveQuests();
+            await saveSuggestions();
+
+            renderModalSuggestions();
+            renderModalActiveQuests();
+            render();
+        }
+    });
+
+    // 9. Manual Quest additions / updates
+    $('#manualEditBtn').addEventListener('click', () => {
+        $('#manualQuestTitle').value = '';
+        $('#manualQuestStatus').value = 'pending';
+        $('#manualQuestNotes').value = '';
+        $('#manualQuestId').value = '';
+        
+        $('#saveManualQuestBtn').textContent = 'Add Quest';
+        $('#deleteManualQuestBtn').style.display = 'none';
+        $('#manualEditForm').style.display = 'block';
+    });
+
+    $('#cancelManualQuestBtn').addEventListener('click', () => {
+        $('#manualEditForm').style.display = 'none';
+    });
+
+    $('#saveManualQuestBtn').addEventListener('click', async (e) => {
+        e.preventDefault();
+        const title = $('#manualQuestTitle').value.trim();
+        const status = $('#manualQuestStatus').value;
+        const notes = $('#manualQuestNotes').value.trim();
+        const id = $('#manualQuestId').value;
+        const todayStr = getTodayDateStr();
+
+        if (!title) {
+            alert('Please enter a task title.');
+            return;
+        }
+
+        if (id) {
+            // Update
+            const quest = tasks.find(t => t.id === id);
+            if (quest) {
+                quest.title = title;
+                quest.status = status;
+                quest.notes = notes;
+                quest.completedAt = status === 'completed' ? new Date().toISOString() : null;
+            }
+        } else {
+            // Add new
+            tasks.push({
+                id: (Date.now() + Math.random()).toString(),
+                category: activeCategory,
+                title: title,
+                status: status,
+                date: todayStr,
+                completedAt: status === 'completed' ? new Date().toISOString() : null,
+                notes: notes
+            });
+        }
 
         await saveQuests();
         $('#manualEditForm').style.display = 'none';
-        openQuestModal(activeCategory);
+        renderModalActiveQuests();
         render();
     });
 
-    // 10. Save Settings Form
+    $('#deleteManualQuestBtn').addEventListener('click', async () => {
+        const id = $('#manualQuestId').value;
+        if (id) {
+            tasks = tasks.filter(t => t.id !== id);
+            await saveQuests();
+            $('#manualEditForm').style.display = 'none';
+            renderModalActiveQuests();
+            render();
+        }
+    });
+
+    // 10. Regenerate Suggestions via AI
+    $('#aiRegenerateBtn').addEventListener('click', async () => {
+        if (activeCategory) {
+            await generateAllDailySuggestions(true);
+        }
+    });
+
+    // 11. Run Coach Weekly Reflection Job
+    $('#runReflectionBtn').addEventListener('click', async () => {
+        await runWeeklyReflectionJob();
+    });
+
+    // 12. Active Projects Manager
+    $('#projectForm').addEventListener('submit', async (e) => {
+        e.preventDefault();
+        
+        const name = $('#projName').value.trim();
+        const cat = $('#projCat').value;
+        const stage = $('#projStage').value.trim();
+        const milestone = $('#projMilestone').value.trim();
+
+        if (!name || !stage || !milestone) return;
+
+        projects.push({
+            id: (Date.now() + Math.random()).toString(),
+            name,
+            category: cat,
+            status: 'active',
+            currentStage: stage,
+            nextMilestone: milestone
+        });
+
+        await saveProjects();
+        $('#projectForm').reset();
+        renderProjectsList();
+        alert('Active project added successfully!');
+    });
+
+    $('#activeProjectsList').addEventListener('click', async (e) => {
+        if (e.target.classList.contains('project-delete-btn')) {
+            const id = e.target.getAttribute('data-id');
+            projects = projects.filter(p => p.id !== id);
+            await saveProjects();
+            renderProjectsList();
+        }
+    });
+
+    // 13. Save Settings Configuration
     $('#settingsForm').addEventListener('submit', async (e) => {
         e.preventDefault();
         
@@ -1077,32 +1758,56 @@ document.addEventListener('DOMContentLoaded', async () => {
         questSettings.musicLevel = $('#musicLevel').value;
         questSettings.musicFocus = $('#musicFocus').value.trim();
 
+        const wasOnboardingCompleted = questSettings.onboardingCompleted;
+        questSettings.onboardingCompleted = true;
+
         await saveQuestSettings();
         alert('Configuration saved successfully!');
+        
+        if (!wasOnboardingCompleted) {
+            // Generate suggestions now that onboarding/configuration is complete
+            await generateAllDailySuggestions(true);
+            
+            // Switch back to dashboard tab
+            $$('.nav-btn').forEach(b => b.classList.remove('active'));
+            const dashBtn = $('[data-tab="dashboard"]');
+            if (dashBtn) dashBtn.classList.add('active');
+            $$('.tab-view').forEach(view => view.classList.remove('active'));
+            const dashView = $('#dashboardView');
+            if (dashView) dashView.classList.add('active');
+            activeTab = 'dashboard';
+        }
+        
         render();
     });
 
-    // 11. Save API Key separately
+    // 14. Save API Key
     $('#saveApiKeyBtn').addEventListener('click', () => {
         const key = $('#settingsApiKey').value.trim();
         localStorage.setItem('lifesystem_gemini_api_key', key);
         alert('API Key updated successfully!');
     });
 
-    // 12. Trigger Login/Signup Modal
-    $('#triggerAuthModalBtn').addEventListener('click', () => {
-        showAuthModal();
+    // 15. Chat Coach Submit Message
+    $('#chatForm').addEventListener('submit', async (e) => {
+        e.preventDefault();
+        const text = $('#chatInput').value.trim();
+        if (!text) return;
+
+        $('#chatInput').value = '';
+        appendMessage('user', text);
+        
+        await processChatCoach(text);
     });
 
-    // 13. Motivational Quote modal close
-    $('#closeQuoteBtn').addEventListener('click', () => {
-        $('#quoteModal').classList.remove('active');
-    });
-    $('#quoteAcknowledgeBtn').addEventListener('click', () => {
-        $('#quoteModal').classList.remove('active');
-    });
+    // 16. Trigger Login/Signup modal
+    $('#triggerAuthModalBtn').addEventListener('click', showAuthModal);
 
-    // 14. Onboarding modal close & triggers
+    // 17. Close Motivational Quote modal
+    $('#closeQuoteBtn').addEventListener('click', () => $('#quoteModal').classList.remove('active'));
+    $('#quoteAcknowledgeBtn').addEventListener('click', () => $('#quoteModal').classList.remove('active'));
+
+    // 18. Onboarding modal
     $('#onboardingSetupBtn').addEventListener('click', () => {
         const key = $('#onboardingApiKey').value.trim();
         if (key) {
@@ -1110,7 +1815,7 @@ document.addEventListener('DOMContentLoaded', async () => {
             $('#settingsApiKey').value = key;
         }
         $('#onboardingModal').classList.remove('active');
-        // Switch to settings tab automatically
+        
         $$('.nav-btn').forEach(b => b.classList.remove('active'));
         $('[data-tab="settings"]').classList.add('active');
         $$('.tab-view').forEach(view => view.classList.remove('active'));
@@ -1120,7 +1825,6 @@ document.addEventListener('DOMContentLoaded', async () => {
 
     $('#onboardingGuestBtn').addEventListener('click', () => {
         $('#onboardingModal').classList.remove('active');
-        // Just render default
         render();
     });
 });

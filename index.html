@@ -36,10 +36,9 @@
                         <button id="signOutBtn" class="sign-out-btn">Sign Out</button>
                     </div>
                     <span id="syncStatus" class="sync-status">📡 Local</span>
-                    <button class="theme-toggle" id="themeToggle" style="display:none;">🌙</button> <!-- Hidden but kept for compatibility -->
                 </div>
             </div>
-            <p class="subtitle">Small daily actions, consistent long-term growth.</p>
+            <p class="subtitle">Stateless AI Personal Growth Operating System.</p>
         </header>
 
         <!-- Main Navigation Tabs -->
@@ -57,14 +56,14 @@
                 <!-- Daily Overall Progress Bar -->
                 <div class="overall-progress-card">
                     <div class="progress-info">
-                        <span class="progress-label">Today's Quest Progress</span>
+                        <span class="progress-label">Today's Dashboard Progress</span>
                         <span id="overallProgressText" class="progress-val">0%</span>
                     </div>
                     <div class="progress-bar-container">
                         <div id="overallProgressBar" class="progress-bar-fill" style="width: 0%;"></div>
                     </div>
                     <div class="overall-stats-row">
-                        <span id="dailyQuestsStatus">0 of 9 Quests Cleared</span>
+                        <span id="dailyQuestsStatus">0 of 0 Active Quests Completed</span>
                         <span id="dailyBubblesStatus">0 of 3 Bubbles Completed</span>
                     </div>
                 </div>
@@ -81,7 +80,7 @@
                         <div class="bubble-inner">
                             <div class="bubble-icon">💻</div>
                             <h3 class="bubble-title">Tech</h3>
-                            <span class="bubble-focus" id="focus-tech">React Fundamentals</span>
+                            <span class="bubble-focus" id="focus-tech">Define Focus</span>
                             <span class="bubble-stats" id="stats-tech">0/3 Today</span>
                             <div class="bubble-completion-badge" id="badge-tech">DONE</div>
                         </div>
@@ -97,7 +96,7 @@
                         <div class="bubble-inner">
                             <div class="bubble-icon">🎹</div>
                             <h3 class="bubble-title">Piano</h3>
-                            <span class="bubble-focus" id="focus-piano">Sight Reading</span>
+                            <span class="bubble-focus" id="focus-piano">Define Focus</span>
                             <span class="bubble-stats" id="stats-piano">0/3 Today</span>
                             <div class="bubble-completion-badge" id="badge-piano">DONE</div>
                         </div>
@@ -113,12 +112,51 @@
                         <div class="bubble-inner">
                             <div class="bubble-icon">🎛️</div>
                             <h3 class="bubble-title">Music Prod</h3>
-                            <span class="bubble-focus" id="focus-music">Ableton Workflow</span>
+                            <span class="bubble-focus" id="focus-music">Define Focus</span>
                             <span class="bubble-stats" id="stats-music">0/3 Today</span>
                             <div class="bubble-completion-badge" id="badge-music">DONE</div>
                         </div>
                     </div>
                 </div>
+
+                <!-- Dashboard Grid: Active Quests list & AI Coach Chat box -->
+                <div class="dashboard-grid" style="margin-top: 3rem; display: grid; grid-template-columns: 1.2fr 0.8fr; gap: 2rem;">
+                    
+                    <!-- Left: Active Quests Console -->
+                    <div class="dashboard-panel active-quests-panel">
+                        <div class="panel-header" style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1.2rem;">
+                            <h3>🎯 Today's Quest Board</h3>
+                            <span class="panel-subtitle" style="font-size: 0.8rem; color: var(--text-light);">Select active tasks to complete today</span>
+                        </div>
+                        <div id="activeQuestsBoard" class="active-quests-board">
+                            <!-- Populated dynamically -->
+                            <p class="empty-state">No active tasks on your Quest Board. Click on a bubble above to generate suggestions and add them!</p>
+                        </div>
+                    </div>
+
+                    <!-- Right: AI Coach Chat Box -->
+                    <div class="dashboard-panel chat-panel">
+                        <div class="panel-header" style="display: flex; align-items: center; gap: 0.5rem; margin-bottom: 1rem;">
+                            <span style="font-size: 1.2rem;">🤖</span>
+                            <h3>AI Coach Console</h3>
+                        </div>
+                        <div class="chat-container">
+                            <div class="chat-messages" id="chatMessages">
+                                <div class="message assistant">
+                                    Hey Remo! I am your Bubble Quest Coach. Tell me what you've done today (e.g. "Finished the React navbar" or "Practiced scales for 15 min") and I'll log your progress instantly!
+                                </div>
+                            </div>
+                            <form id="chatForm" class="chat-input-form" style="display: flex; gap: 0.5rem; border-top: 1px solid var(--border); padding-top: 0.8rem; margin-top: 0.5rem;">
+                                <input type="text" id="chatInput" placeholder="Log progress, e.g. Finished Ableton..." autocomplete="off">
+                                <button type="submit" class="btn btn-primary" style="padding: 0.5rem 1rem;">Send</button>
+                            </form>
+                            <div id="chatLoader" class="chat-spinner" style="display: none; font-size: 0.75rem; color: var(--primary); margin-top: 0.4rem; font-style: italic;">
+                                Coach is checking your tasks...
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
             </div>
 
             <!-- Analytics / Progression View -->
@@ -138,7 +176,23 @@
                         <div class="xp-bar-container">
                             <div id="rpgXpBar" class="xp-bar-fill" style="width: 0%;"></div>
                         </div>
-                        <p class="xp-tip">Complete tasks (+100 XP) and finish full bubbles (+300 XP bonus) to level up!</p>
+                        <p class="xp-tip">Complete tasks (+100 XP), in_progress continuation (+100 XP), and full bubbles (+300 XP bonus) to level up!</p>
+                    </div>
+                </div>
+
+                <!-- Layer 2: Narrative Profile Card -->
+                <div class="profile-reflection-card" style="display: grid; grid-template-columns: 2fr 1fr; gap: 1.5rem; margin-bottom: 2rem; background: var(--bg-secondary); border: 1px solid var(--border); border-radius: var(--radius-lg); padding: 1.5rem; backdrop-filter: blur(16px);">
+                    <div>
+                        <h3 style="font-family: var(--font-rpg); font-size: 1.25rem; color: var(--accent); margin-bottom: 0.8rem;">📜 Narrative Coach Profile</h3>
+                        <p id="narrativeProfileText" class="profile-narrative-text" style="font-size: 0.95rem; line-height: 1.6; color: var(--text-light); font-style: italic;">
+                            "No behavioral patterns analyzed yet. Keep completing quests to build your profile, then run the weekly reflection job below."
+                        </p>
+                        <span id="profileLastUpdated" style="font-size: 0.75rem; color: var(--text-muted); display: block; margin-top: 0.8rem;">Last Updated: Never</span>
+                    </div>
+                    <div style="border-left: 1px solid var(--border); padding-left: 1.5rem; display: flex; flex-direction: column; justify-content: center; align-items: center; text-align: center;">
+                        <h4 style="font-family: var(--font-rpg); font-size: 1rem; margin-bottom: 0.5rem; color: var(--text);">Weekly Reflection Job</h4>
+                        <p style="font-size: 0.75rem; color: var(--text-light); margin-bottom: 1.2rem;">Analyzes the last 30 days of activities to rebuild your narrative coach profile.</p>
+                        <button id="runReflectionBtn" class="btn btn-ai-generate" style="font-size: 0.85rem; width: 100%;">✨ Run Reflection Job</button>
                     </div>
                 </div>
 
@@ -149,16 +203,39 @@
                         <span class="stat-value" id="statTotalCompleted">0</span>
                     </div>
                     <div class="stat-card">
+                        <span class="stat-title">Total Tasks Skipped</span>
+                        <span class="stat-value" id="statTotalSkipped">0</span>
+                    </div>
+                    <div class="stat-card">
                         <span class="stat-title">Bubbles Fully Cleared</span>
                         <span class="stat-value" id="statTotalBubbles">0</span>
                     </div>
                     <div class="stat-card">
-                        <span class="stat-title">Current Weekly Rate</span>
-                        <span class="stat-value" id="statWeeklyRate">0%</span>
+                        <span class="stat-title">Current Streak Length</span>
+                        <span class="stat-value" id="statStreak">0 days</span>
                     </div>
-                    <div class="stat-card">
-                        <span class="stat-title">Active Month Success</span>
-                        <span class="stat-value" id="statMonthlyRate">0%</span>
+                </div>
+
+                <!-- Layer 1: Advanced Structured Stats Card -->
+                <div class="stats-breakdown-card" style="background: var(--bg-secondary); border: 1px solid var(--border); border-radius: var(--radius-lg); padding: 1.5rem; margin-bottom: 2rem; backdrop-filter: blur(16px);">
+                    <h3 style="font-family: var(--font-rpg); font-size: 1.2rem; color: var(--primary); margin-bottom: 1rem;">📊 Layer 1 Structured Statistics</h3>
+                    <div class="structured-stats-grid" style="display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 1.5rem;">
+                        <div>
+                            <span style="font-size: 0.8rem; color: var(--text-muted); display: block; margin-bottom: 0.3rem;">Favorite Topic Focus</span>
+                            <strong id="statFavTopic" style="font-size: 1.1rem; color: var(--text);">None yet</strong>
+                        </div>
+                        <div>
+                            <span style="font-size: 0.8rem; color: var(--text-muted); display: block; margin-bottom: 0.3rem;">Frequently Ignored Topics</span>
+                            <strong id="statSkippedTopic" style="font-size: 1.1rem; color: var(--text);">None yet</strong>
+                        </div>
+                        <div>
+                            <span style="font-size: 0.8rem; color: var(--text-muted); display: block; margin-bottom: 0.3rem;">Completed Tasks (Last 30 Days)</span>
+                            <strong id="statCompleted30" style="font-size: 1.1rem; color: var(--success);">0</strong>
+                        </div>
+                        <div>
+                            <span style="font-size: 0.8rem; color: var(--text-muted); display: block; margin-bottom: 0.3rem;">Skipped Tasks (Last 30 Days)</span>
+                            <strong id="statSkipped30" style="font-size: 1.1rem; color: var(--danger);">0</strong>
+                        </div>
                     </div>
                 </div>
 
@@ -193,7 +270,7 @@
                     <!-- Skill Goals & Levels -->
                     <div class="settings-card flex-double">
                         <h3>🎯 Skill Configuration</h3>
-                        <p class="settings-desc">Define your goals, level, and monthly focus for each category. The AI will customize your daily quests accordingly.</p>
+                        <p class="settings-desc">Define your goals, level, and monthly focus for each category. The AI will customize your daily suggestions accordingly.</p>
                         
                         <form id="settingsForm">
                             <!-- Tech Config -->
@@ -269,30 +346,66 @@
                         </form>
                     </div>
 
-                    <!-- AI API Keys & Storage -->
-                    <div class="settings-card flex-single">
-                        <h3>🔑 AI & Account Sync</h3>
+                    <!-- AI API Keys, Storage, & Layer 4 Projects -->
+                    <div class="settings-card flex-single" style="display: flex; flex-direction: column; gap: 2rem;">
                         
-                        <div class="settings-section">
-                            <label for="settingsApiKey" style="font-weight: 700; display: flex; align-items: center; justify-content: space-between;">
-                                <span>Gemini API Key:</span> 
-                                <a href="https://aistudio.google.com/app/apikey" target="_blank" style="font-size: 0.8rem; color: var(--primary); text-decoration: underline;">Get free key ↗</a>
-                            </label>
-                            <input type="password" id="settingsApiKey" placeholder="Paste your Gemini key here..." class="key-input">
-                            <p class="help-text">This key is stored locally in your browser and used only to call Gemini API for daily quest generation.</p>
-                            <button id="saveApiKeyBtn" class="btn btn-secondary" style="margin-top: 0.5rem; width: 100%;">Save Key</button>
-                        </div>
+                        <!-- AI & Account Sync -->
+                        <div>
+                            <h3>🔑 AI & Account Sync</h3>
+                            <div class="settings-section">
+                                <label for="settingsApiKey" style="font-weight: 700; display: flex; align-items: center; justify-content: space-between;">
+                                    <span>Gemini API Key:</span> 
+                                    <a href="https://aistudio.google.com/app/apikey" target="_blank" style="font-size: 0.8rem; color: var(--primary); text-decoration: underline;">Get free key ↗</a>
+                                </label>
+                                <input type="password" id="settingsApiKey" placeholder="Paste your Gemini key here..." class="key-input">
+                                <p class="help-text">Used for daily suggestions generation and AI Coach Natural logging.</p>
+                                <button id="saveApiKeyBtn" class="btn btn-secondary" style="margin-top: 0.5rem; width: 100%;">Save Key</button>
+                            </div>
 
-                        <!-- Firebase Account Auth Panel -->
-                        <div class="settings-section" style="margin-top: 2rem;">
-                            <h4>☁️ Cloud Sync (Firebase)</h4>
-                            <p class="help-text" style="margin-bottom: 1rem;">Sign in to back up your quests, level, and settings in the cloud so you can access them from any device.</p>
-                            
-                            <div id="settingsSyncStatus">
-                                <p style="font-size: 0.9rem; color: var(--text-light); margin-bottom: 1rem;">Current Status: <strong style="color: var(--warning);" id="syncStatusLabel">Guest Mode (Offline)</strong></p>
-                                <button id="triggerAuthModalBtn" class="btn btn-primary" style="width: 100%;">Sign In / Register</button>
+                            <!-- Firebase Account Sync -->
+                            <div class="settings-section" style="margin-top: 1rem;">
+                                <h4>☁️ Cloud Sync (Firebase)</h4>
+                                <p class="help-text" style="margin-bottom: 0.8rem;">Back up your narrative profile, projects, and quests logs to Firestore.</p>
+                                <div id="settingsSyncStatus">
+                                    <p style="font-size: 0.85rem; color: var(--text-light); margin-bottom: 0.8rem;">Status: <strong style="color: var(--warning);" id="syncStatusLabel">Guest Mode (Offline)</strong></p>
+                                    <button id="triggerAuthModalBtn" class="btn btn-primary" style="width: 100%; font-size: 0.85rem; padding: 0.5rem 1rem;">Sign In / Register</button>
+                                </div>
                             </div>
                         </div>
+
+                        <!-- Layer 4: Active Projects Manager -->
+                        <div>
+                            <h3>📂 Layer 4: Active Projects</h3>
+                            <div class="settings-section">
+                                <form id="projectForm" style="display: flex; flex-direction: column; gap: 0.8rem;">
+                                    <div class="form-group" style="margin-bottom: 0;">
+                                        <label for="projName">Project Name:</label>
+                                        <input type="text" id="projName" placeholder="e.g. Archie (Django App)" required>
+                                    </div>
+                                    <div class="form-group" style="margin-bottom: 0;">
+                                        <label for="projCat">Category:</label>
+                                        <select id="projCat" required>
+                                            <option value="tech">Tech</option>
+                                            <option value="piano">Piano</option>
+                                            <option value="music">Music Production</option>
+                                        </select>
+                                    </div>
+                                    <div class="form-group" style="margin-bottom: 0;">
+                                        <label for="projStage">Current Stage:</label>
+                                        <input type="text" id="projStage" placeholder="e.g. Database Design" required>
+                                    </div>
+                                    <div class="form-group" style="margin-bottom: 0;">
+                                        <label for="projMilestone">Next Milestone:</label>
+                                        <input type="text" id="projMilestone" placeholder="e.g. Create Notes Upload System" required>
+                                    </div>
+                                    <button type="submit" class="btn btn-primary" style="font-size: 0.85rem; padding: 0.5rem 1rem;">➕ Add Active Project</button>
+                                </form>
+                            </div>
+                            <div id="activeProjectsList" style="max-height: 250px; overflow-y: auto; display: flex; flex-direction: column; gap: 0.8rem;">
+                                <!-- Populated dynamically -->
+                            </div>
+                        </div>
+
                     </div>
                 </div>
             </div>
@@ -300,79 +413,111 @@
 
         <!-- Quest Detail Modal (Expanded Bubble View) -->
         <div id="questModal" class="modal">
-            <div class="modal-content quest-modal-content">
+            <div class="modal-content quest-modal-content" style="max-width: 580px;">
                 <div class="modal-header">
                     <div class="modal-title-wrap">
                         <span id="questModalIcon" class="modal-cat-icon">💻</span>
-                        <h2 id="questModalTitle">Tech Quests</h2>
+                        <h2 id="questModalTitle">Tech Panel</h2>
                     </div>
                     <button class="close-btn" id="closeQuestModalBtn">&times;</button>
                 </div>
                 
-                <div class="quest-modal-body">
-                    <!-- Current Focus Indicator -->
-                    <div class="modal-focus-indicator">
-                        <span>Current Monthly Focus:</span>
-                        <strong id="questModalFocus">React Fundamentals</strong>
-                    </div>
-
-                    <!-- Date display -->
-                    <div class="modal-date-display" id="questModalDate">Today</div>
-
-                    <!-- Quests Container -->
-                    <div class="quests-list" id="questsList">
-                        <!-- Quests injected here: 3 checkboxes with optional notes -->
-                    </div>
-
-                    <!-- Category Complete Message -->
-                    <div class="category-complete-banner" id="categoryCompleteBanner" style="display: none;">
-                        <span class="celebration-emoji">🎉</span>
-                        <div class="banner-text">
-                            <h4 id="categoryCompleteTitle">Daily Tech Quest Complete!</h4>
-                            <p>+300 XP Bonus Awarded</p>
-                        </div>
-                    </div>
-
-                    <!-- Modal Actions -->
-                    <div class="quest-modal-actions">
-                        <button id="aiRegenerateBtn" class="btn btn-ai-generate">
-                            <span>✨ AI Regenerate Today's Quests</span>
+                <div class="quest-modal-body" style="padding: 0;">
+                    <!-- Modal Sub Navigation Tabs -->
+                    <div class="modal-tabs" style="display: flex; border-bottom: 1px solid var(--border);">
+                        <button id="modalTabQuests" class="modal-tab-btn active" style="flex: 1; background: transparent; border: none; padding: 0.8rem; color: var(--text); font-family: var(--font-rpg); font-size: 1rem; font-weight: 700; cursor: pointer; border-bottom: 2px solid var(--primary);">
+                            Today's Board
                         </button>
-                        <button id="manualEditBtn" class="btn btn-secondary">✏️ Edit Quests Manually</button>
+                        <button id="modalTabSuggestions" class="modal-tab-btn" style="flex: 1; background: transparent; border: none; padding: 0.8rem; color: var(--text-light); font-family: var(--font-rpg); font-size: 1rem; font-weight: 700; cursor: pointer;">
+                            AI Suggestions
+                        </button>
                     </div>
 
-                    <!-- Manual Edit Form (hidden by default) -->
-                    <div id="manualEditForm" class="manual-edit-form" style="display: none;">
-                        <h4>Edit Today's 3 Quests</h4>
-                        <div class="form-group">
-                            <label for="manualQuest0">Quest 1:</label>
-                            <input type="text" id="manualQuest0" required>
+                    <div style="padding: 1.5rem;">
+                        <!-- Focus Indicator -->
+                        <div class="modal-focus-indicator">
+                            <span>Current Monthly Focus:</span>
+                            <strong id="questModalFocus">Define Focus</strong>
                         </div>
-                        <div class="form-group">
-                            <label for="manualQuest1">Quest 2:</label>
-                            <input type="text" id="manualQuest1" required>
-                        </div>
-                        <div class="form-group">
-                            <label for="manualQuest2">Quest 3:</label>
-                            <input type="text" id="manualQuest2" required>
-                        </div>
-                        <div style="display: flex; gap: 0.5rem;">
-                            <button id="saveManualQuestsBtn" class="btn btn-primary">Save Changes</button>
-                            <button id="cancelManualQuestsBtn" class="btn btn-secondary">Cancel</button>
-                        </div>
-                    </div>
 
-                    <!-- Loading overlay for AI Gen -->
-                    <div id="aiModalLoader" class="modal-loader" style="display: none;">
-                        <div class="spinner"></div>
-                        <p id="aiModalLoaderText">Generating custom daily quests via Gemini...</p>
+                        <!-- Date Display -->
+                        <div class="modal-date-display" id="questModalDate">Today</div>
+
+                        <!-- TAB 1: Active Board Content -->
+                        <div id="modalActiveBoardContent" class="modal-tab-content active">
+                            <div class="quests-list" id="questsList">
+                                <!-- Active Quests list populated here -->
+                            </div>
+                            
+                            <!-- Category Complete Message -->
+                            <div class="category-complete-banner" id="categoryCompleteBanner" style="display: none;">
+                                <span class="celebration-emoji">🎉</span>
+                                <div class="banner-text">
+                                    <h4 id="categoryCompleteTitle">Daily Tech Quest Complete!</h4>
+                                    <p>+300 XP Bonus Awarded</p>
+                                </div>
+                            </div>
+
+                            <button id="manualEditBtn" class="btn btn-secondary" style="width: 100%; margin-top: 1rem;">✏️ Edit Active Quests Manually</button>
+                        </div>
+
+                        <!-- TAB 2: AI Suggestions Content -->
+                        <div id="modalSuggestionsContent" class="modal-tab-content" style="display: none;">
+                            <p style="font-size: 0.8rem; color: var(--text-light); margin-bottom: 1rem; line-height: 1.4;">
+                                Review these daily suggestions customized by your coach. Click "Add" to assign them to your board for today.
+                            </p>
+                            <div class="suggestions-list" id="suggestionsList">
+                                <!-- Suggested Quests list populated here -->
+                            </div>
+
+                            <div class="quest-modal-actions" style="margin-top: 1.5rem;">
+                                <button id="aiRegenerateBtn" class="btn btn-ai-generate" style="width: 100%;">
+                                    <span>✨ Regenerate Suggestions via AI</span>
+                                </button>
+                            </div>
+                        </div>
+
+                        <!-- Manual Edit Form (hidden by default) -->
+                        <div id="manualEditForm" class="manual-edit-form" style="display: none; margin-top: 1rem;">
+                            <h4>Add / Edit Quests on Board</h4>
+                            <div class="form-group">
+                                <label for="manualQuestTitle">Task Title:</label>
+                                <input type="text" id="manualQuestTitle" placeholder="e.g. Practiced C scales for 15 min..." required>
+                            </div>
+                            <div class="form-group">
+                                <label for="manualQuestStatus">Status:</label>
+                                <select id="manualQuestStatus">
+                                    <option value="pending">pending</option>
+                                    <option value="in_progress">in_progress</option>
+                                    <option value="completed">completed</option>
+                                    <option value="skipped">skipped</option>
+                                    <option value="carried_forward">carried_forward</option>
+                                </select>
+                            </div>
+                            <div class="form-group">
+                                <label for="manualQuestNotes">Completion Notes:</label>
+                                <textarea id="manualQuestNotes" placeholder="What did you achieve?"></textarea>
+                            </div>
+                            <input type="hidden" id="manualQuestId">
+                            <div style="display: flex; gap: 0.5rem;">
+                                <button id="saveManualQuestBtn" class="btn btn-primary" style="flex: 1;">Save Quest</button>
+                                <button id="deleteManualQuestBtn" class="btn btn-secondary" style="border-color: var(--danger); color: var(--danger); display: none;">Delete</button>
+                                <button id="cancelManualQuestBtn" class="btn btn-secondary">Cancel</button>
+                            </div>
+                        </div>
+
+                        <!-- Loading overlay for AI Gen -->
+                        <div id="aiModalLoader" class="modal-loader" style="display: none;">
+                            <div class="spinner"></div>
+                            <p id="aiModalLoaderText">Generating custom daily quests via Gemini...</p>
+                        </div>
                     </div>
                 </div>
             </div>
         </div>
 
         <!-- Premium Auth Modal (Overlay) -->
-        <div id="authModal" class="auth-modal" style="display: none;">
+        <div id="authModal" class="auth-modal">
             <div class="auth-container">
                 <div class="auth-logo">🫧</div>
                 <h2 id="authTitle" class="auth-title">Log In</h2>
@@ -402,7 +547,7 @@
         </div>
 
         <!-- Premium Daily Motivation Popup Modal -->
-        <div id="quoteModal" class="auth-modal" style="display: none; z-index: 4000;">
+        <div id="quoteModal" class="auth-modal" style="z-index: 4000;">
             <div class="auth-container quote-modal-container">
                 <button id="closeQuoteBtn" class="close-quote-btn">&times;</button>
                 <div class="quote-icon">🔥</div>
@@ -415,8 +560,8 @@
             </div>
         </div>
 
-        <!-- Setup/API Key Onboarding Popup (Helpful when new user launches the app) -->
-        <div id="onboardingModal" class="auth-modal" style="display: none; z-index: 3000;">
+        <!-- Setup/API Key Onboarding Popup -->
+        <div id="onboardingModal" class="auth-modal" style="z-index: 3000;">
             <div class="auth-container" style="max-width: 460px;">
                 <div class="auth-logo">🚀</div>
                 <h2 class="auth-title">Initialize Your Quests</h2>

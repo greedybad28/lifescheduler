@@ -542,9 +542,7 @@ async function runWeeklyReflectionJob() {
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
                 contents: [{ parts: [{ text: promptText }] }],
-                generationConfig: {
-                    systemInstruction: { parts: [{ text: systemPrompt }] }
-                }
+                systemInstruction: { parts: [{ text: systemPrompt }] }
             })
         });
 
@@ -569,6 +567,16 @@ async function runWeeklyReflectionJob() {
     } finally {
         toggleLoading(false);
     }
+}
+
+/* ===================== HELPER JSON PARSER FOR AI RESPONSES ===================== */
+function cleanAndParseJson(text) {
+    if (!text) throw new Error("Empty JSON response");
+    let cleanText = text.trim();
+    if (cleanText.startsWith('```')) {
+        cleanText = cleanText.replace(/^```(?:json)?/, '').replace(/```$/, '').trim();
+    }
+    return JSON.parse(cleanText);
 }
 
 /* ===================== AI DAILY QUEST SUGGESTIONS GENERATOR ===================== */
@@ -688,9 +696,9 @@ async function generateAllDailySuggestions(force = false) {
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
                 contents: [{ parts: [{ text: promptText }] }],
+                systemInstruction: { parts: [{ text: systemPrompt }] },
                 generationConfig: {
-                    responseMimeType: "application/json",
-                    systemInstruction: { parts: [{ text: systemPrompt }] }
+                    responseMimeType: "application/json"
                 }
             })
         });
@@ -701,7 +709,7 @@ async function generateAllDailySuggestions(force = false) {
         const textResponse = data.candidates?.[0]?.content?.parts?.[0]?.text;
         if (!textResponse) throw new Error('No suggestions returned');
 
-        const parsed = JSON.parse(textResponse);
+        const parsed = cleanAndParseJson(textResponse);
         suggestions.date = todayStr;
         suggestions.tech = parsed.tech || [];
         suggestions.piano = parsed.piano || [];
@@ -858,9 +866,9 @@ async function processChatCoach(messageText) {
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
                 contents: [{ parts: [{ text: promptText }] }],
+                systemInstruction: { parts: [{ text: systemPrompt }] },
                 generationConfig: {
-                    responseMimeType: "application/json",
-                    systemInstruction: { parts: [{ text: systemPrompt }] }
+                    responseMimeType: "application/json"
                 }
             })
         });
@@ -871,7 +879,7 @@ async function processChatCoach(messageText) {
         const textResponse = data.candidates?.[0]?.content?.parts?.[0]?.text;
         
         if (textResponse) {
-            const result = JSON.parse(textResponse);
+            const result = cleanAndParseJson(textResponse);
             
             if (!questSettings.onboardingCompleted) {
                 // Onboarding processing
